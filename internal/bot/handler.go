@@ -5,6 +5,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/IlyaMakar/finance_bot/internal/service"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -51,10 +52,26 @@ func initBasicCategories(s *service.FinanceService) {
 		{"🎢 Развлечения", "expense"},
 	}
 
+	// Получаем существующие категории
+	existingCategories, err := s.GetCategories()
+	if err != nil {
+		log.Printf("Ошибка при получении категорий: %v", err)
+		return
+	}
+
+	// Создаем мапу для быстрой проверки существующих категорий
+	existingMap := make(map[string]bool)
+	for _, cat := range existingCategories {
+		existingMap[cat.Name] = true
+	}
+
+	// Создаем только отсутствующие категории
 	for _, cat := range basicCategories {
-		_, err := s.CreateCategory(cat.name, cat.typ, nil)
-		if err != nil && !strings.Contains(err.Error(), "UNIQUE constraint") {
-			log.Printf("Failed to create category %s: %v", cat.name, err)
+		if !existingMap[cat.name] {
+			_, err := s.CreateCategory(cat.name, cat.typ, nil)
+			if err != nil {
+				log.Printf("Ошибка при создании категории %s: %v", cat.name, err)
+			}
 		}
 	}
 }
@@ -256,8 +273,24 @@ func (b *Bot) handleCommentInput(msg *tgbotapi.Message) {
 		state.TempComment = msg.Text
 	}
 
-	_, err := b.services.AddTransaction(
-		state.TempAmount,
+	// Получаем категорию
+	category, err := b.services.GetCategoryByID(state.TempCategoryID)
+	if err != nil {
+		b.sendError(msg.Chat.ID, fmt.Errorf("не удалось получить категорию: %v", err))
+		return
+	}
+
+	// Проверяем тип операции
+	var amount float64
+	if category.Type == "expense" {
+		amount = -state.TempAmount
+	} else {
+		amount = state.TempAmount
+	}
+
+	// Добавляем транзакцию
+	_, err = b.services.AddTransaction(
+		amount,
 		state.TempCategoryID,
 		"card",
 		state.TempComment,
@@ -267,19 +300,21 @@ func (b *Bot) handleCommentInput(msg *tgbotapi.Message) {
 		return
 	}
 
-	category, err := b.services.GetCategory(state.TempCategoryID)
-	categoryName := "Неизвестная категория"
-	if err == nil {
-		categoryName = category.Name
+	// Формируем сообщение подтверждения
+	operationType := "Доход"
+	if amount < 0 {
+		operationType = "Расход"
+		amount = -amount
 	}
 
 	confirmMsg := fmt.Sprintf(
-		"✅ Операция добавлена:\n\n"+
-			"💳 Категория: %s\n"+
-			"💵 Сумма: %.2f руб.\n"+
+		"✅ %s добавлен:\n\n"+
+			"📌 Категория: %s\n"+
+			"💰 Сумма: %.2f руб.\n"+
 			"📝 Комментарий: %s",
-		categoryName,
-		state.TempAmount,
+		operationType,
+		category.Name,
+		amount,
 		state.TempComment,
 	)
 
@@ -307,9 +342,42 @@ func (b *Bot) handleNewCategoryInput(msg *tgbotapi.Message) {
 }
 
 func (b *Bot) showReportMenu(chatID int64) {
-	// Заглушка для демонстрации
-	msg := tgbotapi.NewMessage(chatID, "📊 Статистика за текущий месяц:\n\nДоходы: 50 000 руб.\nРасходы: 35 000 руб.\nОстаток: 15 000 руб.")
-	b.send(chatID, msg)
+	now := time.Now()
+	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
+	end := start.AddDate(0, 1, -1)
+
+	transactions, err := b.services.GetTransactionsForPeriod(start, end)
+	if err != nil {
+		b.sendError(chatID, err)
+		return
+	}
+
+	var income, expense float64
+	for _, t := range transactions {
+		// Получаем категорию для проверки типа
+		category, err := b.services.GetCategoryByID(t.CategoryID)
+		if err != nil {
+			log.Printf("Error getting category: %v", err)
+			continue
+		}
+
+		if category.Type == "income" {
+			income += t.Amount
+		} else if category.Type == "expense" {
+			expense += t.Amount
+		}
+	}
+
+	msg := fmt.Sprintf("📊 Статистика за %s:\n\n"+
+		"Доходы: %.2f руб.\n"+
+		"Расходы: %.2f руб.\n"+
+		"Баланс: %.2f руб.",
+		now.Month().String(),
+		income,
+		expense,
+		income-expense)
+
+	b.sendMessage(chatID, msg)
 }
 
 func (b *Bot) showSavingsMenu(chatID int64) {
