@@ -13,29 +13,39 @@ import (
 )
 
 func main() {
-	_ = godotenv.Load()
+	// Загружаем .env файл, если он есть
+	err := godotenv.Load()
+	if err != nil {
+		log.Println(".env файл не найден или не удалось загрузить")
+	}
+
+	token := os.Getenv("TELEGRAM_TOKEN")
+	if token == "" {
+		log.Fatalf("TELEGRAM_TOKEN не задан")
+	}
 
 	db, err := repository.NewSQLiteDB("finance.db")
 	if err != nil {
-		log.Fatalf("failed to initialize db: %s", err.Error())
+		log.Fatalf("не удалось подключиться к БД: %v", err)
 	}
+	defer db.Close()
 
 	if err := repository.InitDB(db); err != nil {
-		log.Fatalf("failed to init db: %s", err.Error())
+		log.Fatalf("не удалось инициализировать БД: %v", err)
 	}
 
-	repos := repository.NewRepository(db)
-	services := service.NewService(repos)
+	repo := repository.NewRepository(db)
+	svc := service.NewService(repo)
 
-	botInstance, err := bot.NewBot(os.Getenv("TELEGRAM_TOKEN"), services)
+	botInstance, err := bot.NewBot(os.Getenv("TELEGRAM_TOKEN"), svc)
 	if err != nil {
-		log.Fatalf("failed to create bot: %s", err.Error())
+		log.Fatalf("не удалось создать бота: %v", err)
 	}
 
 	go botInstance.Start()
 
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-
+	log.Println("Завершение работы...")
 }
