@@ -3,6 +3,7 @@ package bot
 import (
 	"fmt"
 	"log"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -356,38 +357,66 @@ func (b *Bot) showReport(chatID int64) {
 
 	trans, err := b.services.GetTransactionsForPeriod(start, end)
 	if err != nil {
-		b.sendError(chatID, err)
+		b.sendError(chatID, fmt.Errorf("не удалось получить статистику"))
 		return
 	}
 
-	var income, expense float64
+	var totalIncome, totalExpense float64
+	incomeDetails := make(map[string]float64)
+	expenseDetails := make(map[string]float64)
+
+	// Анализ транзакций
 	for _, t := range trans {
+		c, err := b.services.GetCategoryByID(t.CategoryID)
+		categoryName := "Неизвестно"
+		if err == nil {
+			categoryName = c.Name
+		}
+
 		if t.Amount > 0 {
-			income += t.Amount
+			totalIncome += t.Amount
+			incomeDetails[categoryName] += t.Amount
 		} else {
-			expense += t.Amount // Здесь expense уже будет отрицательным
+			totalExpense += t.Amount
+			expenseDetails[categoryName] += t.Amount
 		}
 	}
 
-	// Форматируем вывод
-	formatMoney := func(amount float64) string {
-		return fmt.Sprintf("%.2f ₽", amount)
+	// Форматирование денежных значений
+	format := func(amount float64) string {
+		return fmt.Sprintf("%.2f ₽", math.Abs(amount))
 	}
 
-	message := fmt.Sprintf(
-		"📊 <b>Финансовая статистика</b>\n"+
-			"Период: %s\n\n"+
-			"💵 <b>Доходы:</b> %s\n"+
-			"💸 <b>Расходы:</b> %s\n"+
-			"━━━━━━━━━━━━━━\n"+
-			"💰 <b>Баланс:</b> %s",
+	// Строим детализацию доходов
+	var incomeDetailsStr strings.Builder
+	for name, amount := range incomeDetails {
+		incomeDetailsStr.WriteString(fmt.Sprintf("┣ 📈 %s: %s\n", name, format(amount)))
+	}
+
+	// Строим детализацию расходов
+	var expenseDetailsStr strings.Builder
+	for name, amount := range expenseDetails {
+		expenseDetailsStr.WriteString(fmt.Sprintf("┣ 📉 %s: %s\n", name, format(amount)))
+	}
+
+	// Формируем итоговое сообщение
+	msgText := fmt.Sprintf(
+		"📊 <b>Полная финансовая статистика</b>\n"+
+			"📅 Период: <i>%s</i>\n\n"+
+			"💵 <b>Доходы:</b> %s\n%s\n"+
+			"💸 <b>Расходы:</b> %s\n%s\n"+
+			"━━━━━━━━━━━━━━━━\n"+
+			"💰 <b>Итого баланс:</b> <u>%s</u>\n\n"+
+			"💡 <i>Доходы/расходы по категориям</i>",
 		start.Format("January 2006"),
-		formatMoney(income),
-		formatMoney(-expense),       // Показываем расходы как положительное число
-		formatMoney(income+expense), // Складываем, т.к. expense уже отрицательный
+		format(totalIncome),
+		incomeDetailsStr.String(),
+		format(totalExpense),
+		expenseDetailsStr.String(),
+		format(totalIncome+totalExpense),
 	)
 
-	msg := tgbotapi.NewMessage(chatID, message)
+	msg := tgbotapi.NewMessage(chatID, msgText)
 	msg.ParseMode = "HTML"
 	b.send(chatID, msg)
 }
