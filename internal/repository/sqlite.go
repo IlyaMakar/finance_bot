@@ -164,15 +164,6 @@ func (r *SQLiteRepository) GetTransactionsByPeriod(start, end time.Time) ([]Tran
 	return res, nil
 }
 
-func (r *SQLiteRepository) AddSaving(s Saving) (int, error) {
-	res, err := r.db.Exec("INSERT INTO savings(name,amount,goal,comment) VALUES(?,?,?,?)", s.Name, s.Amount, s.Goal, s.Comment)
-	if err != nil {
-		return 0, fmt.Errorf("insert saving: %w", err)
-	}
-	id, _ := res.LastInsertId()
-	return int(id), nil
-}
-
 func (r *SQLiteRepository) GetSavings() ([]Saving, error) {
 	rows, err := r.db.Query("SELECT id,name,amount,goal,comment FROM savings ORDER BY name")
 	if err != nil {
@@ -183,11 +174,17 @@ func (r *SQLiteRepository) GetSavings() ([]Saving, error) {
 	var list []Saving
 	for rows.Next() {
 		var s Saving
-		var goal *float64
-		if err := rows.Scan(&s.ID, &s.Name, &s.Amount, &goal, &s.Comment); err != nil {
+		var goal sql.NullFloat64
+		var comment sql.NullString
+		if err := rows.Scan(&s.ID, &s.Name, &s.Amount, &goal, &comment); err != nil {
 			return nil, fmt.Errorf("scan saving: %w", err)
 		}
-		s.Goal = goal
+		if goal.Valid {
+			s.Goal = &goal.Float64
+		}
+		if comment.Valid {
+			s.Comment = comment.String
+		}
 		list = append(list, s)
 	}
 	return list, nil
@@ -195,15 +192,28 @@ func (r *SQLiteRepository) GetSavings() ([]Saving, error) {
 
 func (r *SQLiteRepository) GetSavingByID(id int) (*Saving, error) {
 	var s Saving
-	var goal *float64
-	row := r.db.QueryRow("SELECT id,name,amount,goal,comment FROM savings WHERE id = ?", id)
-	if err := row.Scan(&s.ID, &s.Name, &s.Amount, &goal, &s.Comment); err != nil {
+	var goal sql.NullFloat64
+	var comment sql.NullString
+
+	err := r.db.QueryRow(
+		"SELECT id, name, amount, goal, comment FROM savings WHERE id = ?",
+		id,
+	).Scan(&s.ID, &s.Name, &s.Amount, &goal, &comment)
+
+	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("копилка не найдена")
+			return nil, nil // Возвращаем nil вместо ошибки
 		}
-		return nil, fmt.Errorf("scan saving: %w", err)
+		return nil, fmt.Errorf("ошибка запроса: %w", err)
 	}
-	s.Goal = goal
+
+	if goal.Valid {
+		s.Goal = &goal.Float64
+	}
+	if comment.Valid {
+		s.Comment = comment.String
+	}
+
 	return &s, nil
 }
 
