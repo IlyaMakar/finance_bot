@@ -48,21 +48,37 @@ func (s *FinanceService) GetTransactionsForPeriod(start, end time.Time) ([]repos
 	return s.repo.GetTransactionsByPeriod(start, end)
 }
 
-func (s *FinanceService) AddSaving(name, comment string) (int, error) {
-	return s.repo.AddSaving(repository.Saving{Name: name, Amount: 0, Goal: nil, Comment: comment})
-}
-
 func (s *FinanceService) GetSavings() ([]repository.Saving, error) {
 	return s.repo.GetSavings()
 }
 
 func (s *FinanceService) GetSavingByID(id int) (*repository.Saving, error) {
-	return s.repo.GetSavingByID(id)
+	if id <= 0 {
+		return nil, fmt.Errorf("ID копилки должен быть положительным числом")
+	}
+
+	saving, err := s.repo.GetSavingByID(id)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка базы данных: %v", err)
+	}
+
+	if saving == nil {
+		return nil, fmt.Errorf("копилка не найдена")
+	}
+
+	return saving, nil
 }
 
 func (s *FinanceService) UpdateSavingAmount(id int, amount float64) error {
+	if id <= 0 {
+		return fmt.Errorf("неверный ID копилки")
+	}
+	if amount < 0 {
+		return fmt.Errorf("сумма не может быть отрицательной")
+	}
 	return s.repo.UpdateSavingAmount(id, amount)
 }
+
 func (s *FinanceService) CreateSaving(name string, goal *float64) error {
 	return s.repo.CreateSaving(name, goal)
 }

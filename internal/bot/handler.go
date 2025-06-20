@@ -82,6 +82,8 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 		b.showReport(m.Chat.ID)
 	case "💵 Накопления":
 		b.showSavings(m.Chat.ID)
+	case "💰 Пополнить копилку":
+		b.startAddToSaving(m.Chat.ID)
 	case "⚙️ Настройки":
 		b.sendMainMenu(m.Chat.ID, "⚙️ Настройки")
 	case "Пропустить":
@@ -94,8 +96,17 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 func (b *Bot) sendMainMenu(chatID int64, text string) {
 	msg := tgbotapi.NewMessage(chatID, text)
 	menu := tgbotapi.NewReplyKeyboard(
-		tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("➕ Добавить операцию"), tgbotapi.NewKeyboardButton("📈 Статистика")),
-		tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("💵 Накопления"), tgbotapi.NewKeyboardButton("⚙️ Настройки")),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("➕ Добавить операцию"),
+			tgbotapi.NewKeyboardButton("💰 Пополнить копилку"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("📈 Статистика"),
+			tgbotapi.NewKeyboardButton("💵 Накопления"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("⚙️ Настройки"),
+		),
 	)
 	msg.ReplyMarkup = menu
 	b.send(chatID, msg)
@@ -113,24 +124,81 @@ func (b *Bot) startAddTransaction(chatID int64) {
 	b.send(chatID, msg)
 }
 
+func (b *Bot) startAddToSaving(chatID int64) {
+	savings, err := b.services.GetSavings()
+	if err != nil || len(savings) == 0 {
+		b.send(chatID, tgbotapi.NewMessage(chatID, "Нет доступных копилок для пополнения"))
+		return
+	}
+
+	var rows [][]tgbotapi.InlineKeyboardButton
+	for _, s := range savings {
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(s.Name, fmt.Sprintf("add_to_saving_%d", s.ID)),
+		))
+	}
+
+	msg := tgbotapi.NewMessage(chatID, "Выберите копилку для пополнения:")
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
+	b.send(chatID, msg)
+}
+
 func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
-	id := q.From.ID
+	chatID := q.From.ID
 	switch {
 	case q.Data == "type_income" || q.Data == "type_expense":
-		b.handleTypeSelect(id, q.Message.MessageID, q.Data)
+		b.handleTypeSelect(chatID, q.Message.MessageID, q.Data)
+	case strings.HasPrefix(q.Data, "add_to_saving_"):
+		parts := strings.Split(q.Data, "_")
+		if len(parts) < 4 {
+			b.sendError(chatID, fmt.Errorf("неверный формат ID копилки"))
+			return
+		}
+
+		savingID, err := strconv.Atoi(parts[3])
+		if err != nil {
+			b.sendError(chatID, fmt.Errorf("ошибка преобразования ID копилки"))
+			return
+		}
+
+		// Получаем название копилки для подтверждения
+		saving, err := b.services.GetSavingByID(savingID)
+		if err != nil {
+			b.sendError(chatID, fmt.Errorf("не удалось найти копилку"))
+			return
+		}
+
+		state := userStates[chatID]
+		state.Step = "enter_saving_amount"
+		state.TempCategoryID = savingID
+		userStates[chatID] = state
+
+		// Удаляем inline-клавиатуру
+		edit := tgbotapi.NewEditMessageReplyMarkup(chatID, q.Message.MessageID, tgbotapi.InlineKeyboardMarkup{})
+		b.bot.Send(edit)
+
+		b.send(chatID, tgbotapi.NewMessage(chatID, fmt.Sprintf("Вы выбрали копилку: %s\nВведите сумму для пополнения:", saving.Name)))
+
 	case strings.HasPrefix(q.Data, "cat_"):
-		catID, _ := strconv.Atoi(q.Data[4:])
-		b.handleCatSelect(int(id), catID)
+		catID, err := strconv.Atoi(q.Data[4:])
+		if err != nil {
+			b.sendError(chatID, fmt.Errorf("ошибка обработки ID категории"))
+			return
+		}
+		b.handleCatSelect(int(chatID), catID)
+
 	case q.Data == "other_cat":
-		state := userStates[id]
+		state := userStates[chatID]
 		state.Step = "new_cat"
-		userStates[id] = state
-		b.send(id, tgbotapi.NewMessage(id, "Введите название новой категории:"))
+		userStates[chatID] = state
+		b.send(chatID, tgbotapi.NewMessage(chatID, "Введите название новой категории:"))
+
 	case q.Data == "create_saving":
-		state := userStates[id]
+		state := userStates[chatID]
 		state.Step = "create_saving_name"
-		userStates[id] = state
-		b.send(id, tgbotapi.NewMessage(id, "Введите название копилки:"))
+		userStates[chatID] = state
+		b.send(chatID, tgbotapi.NewMessage(chatID, "Введите название копилки:"))
+
 	default:
 		b.bot.Send(tgbotapi.NewCallback(q.ID, ""))
 	}
@@ -156,7 +224,7 @@ func (b *Bot) handleTypeSelect(chatID int64, msgID int, data string) {
 	b.send(chatID, edit)
 }
 
-func (b *Bot) handleCatSelect(chatID, catID int) {
+func (b *Bot) handleCatSelect(chatID int, catID int) {
 	s := userStates[int64(chatID)]
 	s.Step = "enter_amount"
 	s.TempCategoryID = catID
@@ -178,6 +246,8 @@ func (b *Bot) handleUserInput(m *tgbotapi.Message) {
 		b.handleAmount(m)
 	case "enter_comment":
 		b.handleComment(m)
+	case "enter_saving_amount":
+		b.handleSavingAmount(m)
 	case "new_cat":
 		b.handleNewCategory(m)
 	case "create_saving_name":
@@ -186,50 +256,40 @@ func (b *Bot) handleUserInput(m *tgbotapi.Message) {
 		b.handleCreateSavingGoal(m)
 	}
 }
-func (b *Bot) handleCreateSavingName(m *tgbotapi.Message) {
-	name := strings.TrimSpace(m.Text)
-	if name == "" {
-		b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "Название не может быть пустым. Введите название копилки:"))
+
+func (b *Bot) handleSavingAmount(m *tgbotapi.Message) {
+	amount, err := strconv.ParseFloat(m.Text, 64)
+	if err != nil || amount <= 0 {
+		b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "Введите корректную положительную сумму:"))
 		return
 	}
 
-	s := userStates[m.From.ID]
-	s.TempComment = name // временно сохраняем имя копилки здесь
-	s.Step = "create_saving_goal"
-	userStates[m.From.ID] = s
+	state := userStates[m.From.ID]
+	savingID := state.TempCategoryID
 
-	msg := tgbotapi.NewMessage(m.Chat.ID, "Введите цель копилки (число) или отправьте 'Пропустить':")
-	msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("Пропустить"),
-		),
-	)
-	b.send(m.Chat.ID, msg)
-}
-
-func (b *Bot) handleCreateSavingGoal(m *tgbotapi.Message) {
-	s := userStates[m.From.ID]
-
-	var goal *float64
-	if strings.ToLower(m.Text) != "пропустить" {
-		value, err := strconv.ParseFloat(m.Text, 64)
-		if err != nil || value < 0 {
-			b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "Введите корректное положительное число для цели или 'Пропустить':"))
-			return
-		}
-		goal = &value
+	// Получаем текущую копилку
+	saving, err := b.services.GetSavingByID(savingID)
+	if err != nil {
+		b.sendError(m.Chat.ID, fmt.Errorf("не удалось получить данные копилки"))
+		return
 	}
 
-	// Создаем копилку через сервис
-	if err := b.services.CreateSaving(s.TempComment, goal); err != nil {
+	// Обновляем сумму
+	newAmount := saving.Amount + amount
+	if err := b.services.UpdateSavingAmount(savingID, newAmount); err != nil {
 		b.sendError(m.Chat.ID, err)
 		return
 	}
 
-	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "✅ Копилка успешно создана!"))
+	// Отправляем подтверждение
+	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID,
+		fmt.Sprintf("✅ Копилка '%s' пополнена на %.2f. Новый баланс: %.2f",
+			saving.Name, amount, newAmount)))
+
+	// Сбрасываем состояние
 	delete(userStates, m.From.ID)
 
-	// Показываем обновленный список накоплений
+	// Показываем обновленный список
 	b.showSavings(m.Chat.ID)
 }
 
@@ -299,17 +359,37 @@ func (b *Bot) showReport(chatID int64) {
 		b.sendError(chatID, err)
 		return
 	}
-	var inc, exp float64
+
+	var income, expense float64
 	for _, t := range trans {
-		c, _ := b.services.GetCategoryByID(t.CategoryID)
-		if c.Type == "income" {
-			inc += t.Amount
+		if t.Amount > 0 {
+			income += t.Amount
 		} else {
-			exp += t.Amount
+			expense += t.Amount // Здесь expense уже будет отрицательным
 		}
 	}
-	text := fmt.Sprintf("📊 Статистика текущего месяца:\nДоходы: %.2f\nРасходы: %.2f\nБаланс: %.2f", inc, exp, inc-exp)
-	b.send(chatID, tgbotapi.NewMessage(chatID, text))
+
+	// Форматируем вывод
+	formatMoney := func(amount float64) string {
+		return fmt.Sprintf("%.2f ₽", amount)
+	}
+
+	message := fmt.Sprintf(
+		"📊 <b>Финансовая статистика</b>\n"+
+			"Период: %s\n\n"+
+			"💵 <b>Доходы:</b> %s\n"+
+			"💸 <b>Расходы:</b> %s\n"+
+			"━━━━━━━━━━━━━━\n"+
+			"💰 <b>Баланс:</b> %s",
+		start.Format("January 2006"),
+		formatMoney(income),
+		formatMoney(-expense),       // Показываем расходы как положительное число
+		formatMoney(income+expense), // Складываем, т.к. expense уже отрицательный
+	)
+
+	msg := tgbotapi.NewMessage(chatID, message)
+	msg.ParseMode = "HTML"
+	b.send(chatID, msg)
 }
 
 func (b *Bot) showSavings(chatID int64) {
@@ -343,14 +423,58 @@ func (b *Bot) showSavings(chatID int64) {
 	b.send(chatID, msg)
 }
 
+func (b *Bot) handleCreateSavingName(m *tgbotapi.Message) {
+	name := strings.TrimSpace(m.Text)
+	if name == "" {
+		b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "Название не может быть пустым. Введите название копилки:"))
+		return
+	}
+
+	s := userStates[m.From.ID]
+	s.TempComment = name
+	s.Step = "create_saving_goal"
+	userStates[m.From.ID] = s
+
+	msg := tgbotapi.NewMessage(m.Chat.ID, "Введите цель копилки (число) или отправьте 'Пропустить':")
+	msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("Пропустить"),
+		),
+	)
+	b.send(m.Chat.ID, msg)
+}
+
+func (b *Bot) handleCreateSavingGoal(m *tgbotapi.Message) {
+	s := userStates[m.From.ID]
+
+	var goal *float64
+	if strings.ToLower(m.Text) != "пропустить" {
+		value, err := strconv.ParseFloat(m.Text, 64)
+		if err != nil || value < 0 {
+			b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "Введите корректное положительное число для цели или 'Пропустить':"))
+			return
+		}
+		goal = &value
+	}
+
+	if err := b.services.CreateSaving(s.TempComment, goal); err != nil {
+		b.sendError(m.Chat.ID, err)
+		return
+	}
+
+	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "✅ Копилка успешно создана!"))
+	delete(userStates, m.From.ID)
+	b.showSavings(m.Chat.ID)
+}
+
 func (b *Bot) sendError(chatID int64, err error) {
 	log.Println("bot error:", err)
 	b.send(chatID, tgbotapi.NewMessage(chatID, "⚠️ Ошибка: "+err.Error()))
 }
 
 func (b *Bot) send(chatID int64, c tgbotapi.Chattable) {
-	_ = chatID
-	if _, err := b.bot.Send(c); err != nil {
-		log.Println("send:", err)
+	msg, err := b.bot.Send(c)
+	if err != nil {
+		log.Printf("Ошибка отправки в чат %d: %v\nСообщение: %+v", chatID, err, msg)
 	}
 }

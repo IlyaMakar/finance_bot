@@ -13,7 +13,6 @@ import (
 )
 
 func main() {
-	// Загружаем .env файл, если он есть
 	err := godotenv.Load()
 	if err != nil {
 		log.Println(".env файл не найден или не удалось загрузить")
@@ -37,7 +36,7 @@ func main() {
 	repo := repository.NewRepository(db)
 	svc := service.NewService(repo)
 
-	botInstance, err := bot.NewBot(os.Getenv("TELEGRAM_TOKEN"), svc)
+	botInstance, err := bot.NewBot(token, svc)
 	if err != nil {
 		log.Fatalf("не удалось создать бота: %v", err)
 	}
