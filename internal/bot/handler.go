@@ -76,19 +76,53 @@ func (b *Bot) Start() {
 func (b *Bot) handleMessage(m *tgbotapi.Message) {
 	switch m.Text {
 	case "/start":
-		b.sendMainMenu(m.Chat.ID, "Привет! Я бот для учёта финансов.")
+		welcomeMsg := `👋 <b>Привет! Я ваш финансовый помощник!</b>
+
+📌 <i>Вот что я умею:</i>
+
+➕ <b>Добавить операцию</b> - учет доходов и расходов
+💰 <b>Пополнить копилку</b> - пополнение ваших накоплений
+📊 <b>Статистика</b> - подробные отчеты и аналитика
+💵 <b>Накопления</b> - управление сберегательными целями
+⚙️ <b>Настройки</b> - персонализация бота
+
+Выберите действие кнопкой ниже:`
+
+		msg := tgbotapi.NewMessage(m.Chat.ID, welcomeMsg)
+		msg.ParseMode = "HTML"
+		msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButton("➕ Добавить операцию"),
+				tgbotapi.NewKeyboardButton("💰 Пополнить копилку"),
+			),
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButton("📊 Статистика"),
+				tgbotapi.NewKeyboardButton("💵 Накопления"),
+			),
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButton("⚙️ Настройки"),
+			),
+		)
+		b.send(m.Chat.ID, msg)
+
 	case "➕ Добавить операцию":
 		b.startAddTransaction(m.Chat.ID)
-	case "📈 Статистика":
+
+	case "📊 Статистика":
 		b.showReport(m.Chat.ID)
+
 	case "💵 Накопления":
 		b.showSavings(m.Chat.ID)
+
 	case "💰 Пополнить копилку":
 		b.startAddToSaving(m.Chat.ID)
+
 	case "⚙️ Настройки":
-		b.sendMainMenu(m.Chat.ID, "⚙️ Настройки")
+		b.sendMainMenu(m.Chat.ID, "⚙️ <b>Настройки</b>\n\nВыберите параметр для изменения:")
+
 	case "Пропустить":
 		b.handleComment(m)
+
 	default:
 		b.handleUserInput(m)
 	}
