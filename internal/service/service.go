@@ -15,6 +15,14 @@ func NewService(r *repository.SQLiteRepository) *FinanceService {
 	return &FinanceService{repo: r}
 }
 
+func (s *FinanceService) DeleteCategory(id int) error {
+	return s.repo.DeleteCategory(id)
+}
+
+func (s *FinanceService) RenameCategory(id int, newName string) error {
+	return s.repo.RenameCategory(id, newName)
+}
+
 func (s *FinanceService) GetCategories() ([]repository.Category, error) {
 	return s.repo.GetCategories()
 }
