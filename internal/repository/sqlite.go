@@ -115,6 +115,34 @@ func (r *SQLiteRepository) GetCategories() ([]Category, error) {
 	return cats, nil
 }
 
+func (r *SQLiteRepository) CheckCategoryUsage(categoryID int) (bool, error) {
+	var count int
+	err := r.db.QueryRow(
+		"SELECT COUNT(*) FROM transactions WHERE category_id = ?",
+		categoryID,
+	).Scan(&count)
+
+	if err != nil {
+		return false, fmt.Errorf("ошибка проверки использования категории: %w", err)
+	}
+
+	return count > 0, nil
+}
+
+func (r *SQLiteRepository) IsCategoryNameUnique(name string, excludeID int) (bool, error) {
+	var count int
+	err := r.db.QueryRow(
+		"SELECT COUNT(*) FROM categories WHERE name = ? AND id != ?",
+		name, excludeID,
+	).Scan(&count)
+
+	if err != nil {
+		return false, fmt.Errorf("ошибка проверки уникальности имени: %w", err)
+	}
+
+	return count == 0, nil
+}
+
 func (r *SQLiteRepository) GetCategoryByID(id int) (*Category, error) {
 	var c Category
 	var pid *int
@@ -139,6 +167,15 @@ func (r *SQLiteRepository) AddTransaction(t Transaction) (int, error) {
 	}
 	id, _ := res.LastInsertId()
 	return int(id), nil
+}
+func (r *SQLiteRepository) DeleteCategory(id int) error {
+	_, err := r.db.Exec("DELETE FROM categories WHERE id = ?", id)
+	return err
+}
+
+func (r *SQLiteRepository) RenameCategory(id int, newName string) error {
+	_, err := r.db.Exec("UPDATE categories SET name = ? WHERE id = ?", newName, id)
+	return err
 }
 
 func (r *SQLiteRepository) GetTransactionsByPeriod(start, end time.Time) ([]Transaction, error) {
