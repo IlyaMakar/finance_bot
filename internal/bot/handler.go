@@ -157,9 +157,6 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 	case "⚙️ Настройки":
 		b.showSettingsMenu(m.Chat.ID)
 
-	case "Пропустить":
-		b.handleComment(m)
-
 	default:
 		b.handleUserInput(m)
 	}
@@ -231,6 +228,7 @@ func (b *Bot) showCategoryActions(chatID int64, categoryID int) {
 }
 
 func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
+
 	chatID := q.From.ID
 	data := q.Data
 
@@ -349,11 +347,13 @@ func (b *Bot) handleDeleteCategory(chatID int64, categoryID int, messageID int) 
 }
 
 func (b *Bot) handleUserInput(m *tgbotapi.Message) {
+
 	s, ok := userStates[m.From.ID]
 	if !ok {
 		b.sendMainMenu(m.Chat.ID, "Выберите действие:")
 		return
 	}
+
 	switch s.Step {
 	case "rename_category":
 		b.handleRenameCategory(m)
@@ -369,6 +369,7 @@ func (b *Bot) handleUserInput(m *tgbotapi.Message) {
 		b.handleCreateSavingName(m)
 	case "create_saving_goal":
 		b.handleCreateSavingGoal(m)
+	default:
 	}
 }
 
@@ -494,7 +495,11 @@ func (b *Bot) handleComment(m *tgbotapi.Message) {
 	}
 	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID,
 		fmt.Sprintf("✅ %s: %s, %.2f руб.", label, c.Name, amt)))
+
+	// Убеждаемся, что состояние пользователя сбрасывается
 	delete(userStates, m.From.ID)
+
+	// Явно отправляем главное меню после сохранения операции
 	b.sendMainMenu(m.Chat.ID, "✅ Операция сохранена")
 }
 
@@ -614,10 +619,11 @@ func (b *Bot) handleCreateSavingName(m *tgbotapi.Message) {
 	}
 
 	s := userStates[m.From.ID]
-	s.TempComment = name
-	s.Step = "create_saving_goal"
+	s.TempComment = name          // Сохраняем название копилки во временном комментарии
+	s.Step = "create_saving_goal" // Устанавливаем следующий шаг: ввод цели
 	userStates[m.From.ID] = s
 
+	// Отправляем запрос на ввод цели, прикрепляя кнопку "Пропустить"
 	msg := tgbotapi.NewMessage(m.Chat.ID, "Введите цель копилки (число) или отправьте 'Пропустить':")
 	msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
@@ -629,9 +635,10 @@ func (b *Bot) handleCreateSavingName(m *tgbotapi.Message) {
 
 func (b *Bot) handleCreateSavingGoal(m *tgbotapi.Message) {
 	s := userStates[m.From.ID]
-
 	var goal *float64
-	if strings.ToLower(m.Text) != "пропустить" {
+	if strings.ToLower(m.Text) == "пропустить" {
+		goal = nil
+	} else {
 		value, err := strconv.ParseFloat(m.Text, 64)
 		if err != nil || value < 0 {
 			b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "Введите корректное положительное число для цели или 'Пропустить':"))
@@ -646,7 +653,16 @@ func (b *Bot) handleCreateSavingGoal(m *tgbotapi.Message) {
 	}
 
 	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "✅ Копилка успешно создана!"))
+
 	delete(userStates, m.From.ID)
+
+	removeKeyboardMsg := tgbotapi.NewMessage(m.Chat.ID, "")
+	removeKeyboardMsg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
+	_, err := b.bot.Send(removeKeyboardMsg)
+	if err != nil {
+	} else {
+	}
+
 	b.showSavings(m.Chat.ID)
 }
 
@@ -658,7 +674,7 @@ func (b *Bot) sendMainMenu(chatID int64, text string) {
 			tgbotapi.NewKeyboardButton("💰 Пополнить копилку"),
 		),
 		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("📈 Статистика"),
+			tgbotapi.NewKeyboardButton("📊 Статистика"),
 			tgbotapi.NewKeyboardButton("💵 Накопления"),
 		),
 		tgbotapi.NewKeyboardButtonRow(
@@ -670,7 +686,6 @@ func (b *Bot) sendMainMenu(chatID int64, text string) {
 }
 
 func (b *Bot) sendError(chatID int64, err error) {
-	log.Println("bot error:", err)
 	b.send(chatID, tgbotapi.NewMessage(chatID, "⚠️ Ошибка: "+err.Error()))
 }
 
