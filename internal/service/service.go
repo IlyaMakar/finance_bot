@@ -8,42 +8,60 @@ import (
 )
 
 type FinanceService struct {
-	repo *repository.SQLiteRepository
+	repo   *repository.SQLiteRepository
+	userID int
 }
 
-func NewService(r *repository.SQLiteRepository) *FinanceService {
-	return &FinanceService{repo: r}
+func NewService(repo *repository.SQLiteRepository, user *repository.User) *FinanceService {
+	return &FinanceService{
+		repo:   repo,
+		userID: user.ID,
+	}
 }
 
 func (s *FinanceService) DeleteCategory(id int) error {
-	return s.repo.DeleteCategory(id)
+	if _, err := s.repo.GetCategoryByID(s.userID, id); err != nil {
+		return err
+	}
+	return s.repo.DeleteCategory(s.userID, id)
 }
 
 func (s *FinanceService) RenameCategory(id int, newName string) error {
-	return s.repo.RenameCategory(id, newName)
+	// Проверка принадлежности категории пользователю
+	if _, err := s.repo.GetCategoryByID(s.userID, id); err != nil {
+		return err
+	}
+	return s.repo.RenameCategory(s.userID, id, newName) // Добавлен s.userID
 }
 
 func (s *FinanceService) GetCategories() ([]repository.Category, error) {
-	return s.repo.GetCategories()
+	return s.repo.GetCategories(s.userID)
 }
 
 func (s *FinanceService) CreateCategory(name, typ string, parent *int) (int, error) {
-	return s.repo.CreateCategory(repository.Category{Name: name, Type: typ, ParentID: parent})
+	return s.repo.CreateCategory(s.userID, repository.Category{
+		Name:     name,
+		Type:     typ,
+		ParentID: parent,
+	})
 }
 
 func (s *FinanceService) GetCategoryByID(id int) (*repository.Category, error) {
-	return s.repo.GetCategoryByID(id)
+	return s.repo.GetCategoryByID(s.userID, id)
 }
 
 func (s *FinanceService) AddTransaction(amount float64, categoryID int, method, comment string) (int, error) {
-	c, err := s.repo.GetCategoryByID(categoryID)
+	// Проверяем, что категория принадлежит пользователю
+	c, err := s.repo.GetCategoryByID(s.userID, categoryID)
 	if err != nil {
 		return 0, fmt.Errorf("категория не найдена")
 	}
+
 	if (amount < 0 && c.Type != "expense") || (amount > 0 && c.Type != "income") {
 		return 0, fmt.Errorf("несоответствие типа и категории")
 	}
-	return s.repo.AddTransaction(repository.Transaction{
+
+	return s.repo.AddTransaction(s.userID, repository.Transaction{
 		Amount:        amount,
 		CategoryID:    categoryID,
 		Date:          time.Now(),
@@ -53,11 +71,11 @@ func (s *FinanceService) AddTransaction(amount float64, categoryID int, method, 
 }
 
 func (s *FinanceService) GetTransactionsForPeriod(start, end time.Time) ([]repository.Transaction, error) {
-	return s.repo.GetTransactionsByPeriod(start, end)
+	return s.repo.GetTransactionsByPeriod(s.userID, start, end)
 }
 
 func (s *FinanceService) GetSavings() ([]repository.Saving, error) {
-	return s.repo.GetSavings()
+	return s.repo.GetSavings(s.userID)
 }
 
 func (s *FinanceService) GetSavingByID(id int) (*repository.Saving, error) {
@@ -65,7 +83,7 @@ func (s *FinanceService) GetSavingByID(id int) (*repository.Saving, error) {
 		return nil, fmt.Errorf("ID копилки должен быть положительным числом")
 	}
 
-	saving, err := s.repo.GetSavingByID(id)
+	saving, err := s.repo.GetSavingByID(s.userID, id)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка базы данных: %v", err)
 	}
@@ -84,9 +102,9 @@ func (s *FinanceService) UpdateSavingAmount(id int, amount float64) error {
 	if amount < 0 {
 		return fmt.Errorf("сумма не может быть отрицательной")
 	}
-	return s.repo.UpdateSavingAmount(id, amount)
+	return s.repo.UpdateSavingAmount(s.userID, id, amount)
 }
 
 func (s *FinanceService) CreateSaving(name string, goal *float64) error {
-	return s.repo.CreateSaving(name, goal)
+	return s.repo.CreateSaving(s.userID, name, goal)
 }

@@ -12,8 +12,18 @@ type SQLiteRepository struct {
 	db *sql.DB
 }
 
+type User struct {
+	ID         int
+	TelegramID int64
+	Username   string
+	FirstName  string
+	LastName   string
+	CreatedAt  time.Time
+}
+
 type Category struct {
 	ID       int
+	UserID   int
 	Name     string
 	Type     string
 	ParentID *int
@@ -21,6 +31,7 @@ type Category struct {
 
 type Transaction struct {
 	ID            int
+	UserID        int
 	Amount        float64
 	CategoryID    int
 	Date          time.Time
@@ -30,6 +41,7 @@ type Transaction struct {
 
 type Saving struct {
 	ID      int
+	UserID  int
 	Name    string
 	Amount  float64
 	Goal    *float64
@@ -49,34 +61,54 @@ func NewSQLiteDB(path string) (*sql.DB, error) {
 
 func InitDB(db *sql.DB) error {
 	schema := `
+CREATE TABLE IF NOT EXISTS users (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	telegram_id INTEGER NOT NULL UNIQUE,
+	username TEXT,
+	first_name TEXT,
+	last_name TEXT,
+	created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS categories (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  type TEXT NOT NULL CHECK(type IN ('income','expense','saving')),
-  parent_id INTEGER,
-  FOREIGN KEY(parent_id) REFERENCES categories(id)
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL,
+	name TEXT NOT NULL,
+	type TEXT NOT NULL CHECK(type IN ('income','expense','saving')),
+	parent_id INTEGER,
+	FOREIGN KEY(parent_id) REFERENCES categories(id),
+	FOREIGN KEY(user_id) REFERENCES users(id),
+	UNIQUE(user_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  amount REAL NOT NULL,
-  category_id INTEGER NOT NULL,
-  date TEXT NOT NULL,
-  payment_method TEXT CHECK(payment_method IN ('cash','card')),
-  comment TEXT,
-  FOREIGN KEY(category_id) REFERENCES categories(id)
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL,
+	amount REAL NOT NULL,
+	category_id INTEGER NOT NULL,
+	date TEXT NOT NULL,
+	payment_method TEXT CHECK(payment_method IN ('cash','card')),
+	comment TEXT,
+	FOREIGN KEY(category_id) REFERENCES categories(id),
+	FOREIGN KEY(user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS savings (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  amount REAL NOT NULL DEFAULT 0,
-  goal REAL,
-  comment TEXT
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL,
+	name TEXT NOT NULL,
+	amount REAL NOT NULL DEFAULT 0,
+	goal REAL,
+	comment TEXT,
+	FOREIGN KEY(user_id) REFERENCES users(id),
+	UNIQUE(user_id, name)
 );
 
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
 CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id);
+CREATE INDEX IF NOT EXISTS idx_savings_user ON savings(user_id);
 `
 	_, err := db.Exec(schema)
 	return err
@@ -86,17 +118,49 @@ func NewRepository(db *sql.DB) *SQLiteRepository {
 	return &SQLiteRepository{db: db}
 }
 
-func (r *SQLiteRepository) CreateCategory(c Category) (int, error) {
-	res, err := r.db.Exec("INSERT INTO categories(name,type,parent_id) VALUES(?,?,?)", c.Name, c.Type, c.ParentID)
-	if err != nil {
-		return 0, fmt.Errorf("create category: %w", err)
+// Методы для работы с пользователями
+func (r *SQLiteRepository) GetOrCreateUser(telegramID int64, username, firstName, lastName string) (*User, error) {
+	var user User
+	var createdAt string
+
+	err := r.db.QueryRow(
+		"SELECT id, telegram_id, username, first_name, last_name, created_at FROM users WHERE telegram_id = ?",
+		telegramID,
+	).Scan(&user.ID, &user.TelegramID, &user.Username, &user.FirstName, &user.LastName, &createdAt)
+
+	if err == nil {
+		user.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		return &user, nil
 	}
-	id, _ := res.LastInsertId()
-	return int(id), nil
+
+	if err == sql.ErrNoRows {
+		res, err := r.db.Exec(
+			"INSERT INTO users (telegram_id, username, first_name, last_name, created_at) VALUES (?, ?, ?, ?, ?)",
+			telegramID, username, firstName, lastName, time.Now().Format(time.RFC3339),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("create user: %w", err)
+		}
+
+		id, _ := res.LastInsertId()
+		return &User{
+			ID:         int(id),
+			TelegramID: telegramID,
+			Username:   username,
+			FirstName:  firstName,
+			LastName:   lastName,
+			CreatedAt:  time.Now(),
+		}, nil
+	}
+
+	return nil, fmt.Errorf("get user: %w", err)
 }
 
-func (r *SQLiteRepository) GetCategories() ([]Category, error) {
-	rows, err := r.db.Query("SELECT id, name, type, parent_id FROM categories ORDER BY name")
+func (r *SQLiteRepository) GetCategories(userID int) ([]Category, error) {
+	rows, err := r.db.Query(
+		"SELECT id, name, type, parent_id FROM categories WHERE user_id = ? ORDER BY name",
+		userID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("get categories: %w", err)
 	}
@@ -110,43 +174,19 @@ func (r *SQLiteRepository) GetCategories() ([]Category, error) {
 			return nil, fmt.Errorf("scan category: %w", err)
 		}
 		c.ParentID = pid
+		c.UserID = userID
 		cats = append(cats, c)
 	}
 	return cats, nil
 }
 
-func (r *SQLiteRepository) CheckCategoryUsage(categoryID int) (bool, error) {
-	var count int
-	err := r.db.QueryRow(
-		"SELECT COUNT(*) FROM transactions WHERE category_id = ?",
-		categoryID,
-	).Scan(&count)
-
-	if err != nil {
-		return false, fmt.Errorf("ошибка проверки использования категории: %w", err)
-	}
-
-	return count > 0, nil
-}
-
-func (r *SQLiteRepository) IsCategoryNameUnique(name string, excludeID int) (bool, error) {
-	var count int
-	err := r.db.QueryRow(
-		"SELECT COUNT(*) FROM categories WHERE name = ? AND id != ?",
-		name, excludeID,
-	).Scan(&count)
-
-	if err != nil {
-		return false, fmt.Errorf("ошибка проверки уникальности имени: %w", err)
-	}
-
-	return count == 0, nil
-}
-
-func (r *SQLiteRepository) GetCategoryByID(id int) (*Category, error) {
+func (r *SQLiteRepository) GetCategoryByID(userID, categoryID int) (*Category, error) {
 	var c Category
 	var pid *int
-	row := r.db.QueryRow("SELECT id, name, type, parent_id FROM categories WHERE id = ?", id)
+	row := r.db.QueryRow(
+		"SELECT id, name, type, parent_id FROM categories WHERE id = ? AND user_id = ?",
+		categoryID, userID,
+	)
 	if err := row.Scan(&c.ID, &c.Name, &c.Type, &pid); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("категория не найдена")
@@ -154,13 +194,57 @@ func (r *SQLiteRepository) GetCategoryByID(id int) (*Category, error) {
 		return nil, fmt.Errorf("scan category: %w", err)
 	}
 	c.ParentID = pid
+	c.UserID = userID
 	return &c, nil
 }
 
-func (r *SQLiteRepository) AddTransaction(t Transaction) (int, error) {
+func (r *SQLiteRepository) CreateCategory(userID int, c Category) (int, error) {
 	res, err := r.db.Exec(
-		"INSERT INTO transactions(amount,category_id,date,payment_method,comment) VALUES(?,?,?,?,?)",
-		t.Amount, t.CategoryID, t.Date.Format(time.RFC3339), t.PaymentMethod, t.Comment,
+		"INSERT INTO categories(user_id, name, type, parent_id) VALUES(?, ?, ?, ?)",
+		userID, c.Name, c.Type, c.ParentID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("create category: %w", err)
+	}
+	id, _ := res.LastInsertId()
+	return int(id), nil
+}
+
+func (r *SQLiteRepository) RenameCategory(userID, id int, newName string) error {
+	// Проверяем, что категория принадлежит пользователю
+	if _, err := r.GetCategoryByID(userID, id); err != nil {
+		return err
+	}
+
+	_, err := r.db.Exec(
+		"UPDATE categories SET name = ? WHERE id = ? AND user_id = ?",
+		newName, id, userID,
+	)
+	return err
+}
+
+func (r *SQLiteRepository) DeleteCategory(userID, id int) error {
+	// Проверяем, что категория принадлежит пользователю
+	if _, err := r.GetCategoryByID(userID, id); err != nil {
+		return err
+	}
+
+	_, err := r.db.Exec(
+		"DELETE FROM categories WHERE id = ? AND user_id = ?",
+		id, userID,
+	)
+	return err
+}
+
+func (r *SQLiteRepository) AddTransaction(userID int, t Transaction) (int, error) {
+	// Проверяем, что категория принадлежит пользователю
+	if _, err := r.GetCategoryByID(userID, t.CategoryID); err != nil {
+		return 0, err
+	}
+
+	res, err := r.db.Exec(
+		"INSERT INTO transactions(user_id, amount, category_id, date, payment_method, comment) VALUES(?, ?, ?, ?, ?, ?)",
+		userID, t.Amount, t.CategoryID, t.Date.Format(time.RFC3339), t.PaymentMethod, t.Comment,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert trans: %w", err)
@@ -168,20 +252,11 @@ func (r *SQLiteRepository) AddTransaction(t Transaction) (int, error) {
 	id, _ := res.LastInsertId()
 	return int(id), nil
 }
-func (r *SQLiteRepository) DeleteCategory(id int) error {
-	_, err := r.db.Exec("DELETE FROM categories WHERE id = ?", id)
-	return err
-}
 
-func (r *SQLiteRepository) RenameCategory(id int, newName string) error {
-	_, err := r.db.Exec("UPDATE categories SET name = ? WHERE id = ?", newName, id)
-	return err
-}
-
-func (r *SQLiteRepository) GetTransactionsByPeriod(start, end time.Time) ([]Transaction, error) {
+func (r *SQLiteRepository) GetTransactionsByPeriod(userID int, start, end time.Time) ([]Transaction, error) {
 	rows, err := r.db.Query(
-		"SELECT id,amount,category_id,date,payment_method,comment FROM transactions WHERE date >= ? AND date < ? ORDER BY date DESC",
-		start.Format(time.RFC3339), end.Format(time.RFC3339),
+		"SELECT id, amount, category_id, date, payment_method, comment FROM transactions WHERE user_id = ? AND date >= ? AND date < ? ORDER BY date DESC",
+		userID, start.Format(time.RFC3339), end.Format(time.RFC3339),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query trans: %w", err)
@@ -196,13 +271,18 @@ func (r *SQLiteRepository) GetTransactionsByPeriod(start, end time.Time) ([]Tran
 			return nil, fmt.Errorf("scan trans: %w", err)
 		}
 		t.Date, _ = time.Parse(time.RFC3339, ds)
+		t.UserID = userID
 		res = append(res, t)
 	}
 	return res, nil
 }
 
-func (r *SQLiteRepository) GetSavings() ([]Saving, error) {
-	rows, err := r.db.Query("SELECT id,name,amount,goal,comment FROM savings ORDER BY name")
+// Методы для работы с копилками
+func (r *SQLiteRepository) GetSavings(userID int) ([]Saving, error) {
+	rows, err := r.db.Query(
+		"SELECT id, name, amount, goal, comment FROM savings WHERE user_id = ? ORDER BY name",
+		userID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("get savings: %w", err)
 	}
@@ -222,24 +302,25 @@ func (r *SQLiteRepository) GetSavings() ([]Saving, error) {
 		if comment.Valid {
 			s.Comment = comment.String
 		}
+		s.UserID = userID
 		list = append(list, s)
 	}
 	return list, nil
 }
 
-func (r *SQLiteRepository) GetSavingByID(id int) (*Saving, error) {
+func (r *SQLiteRepository) GetSavingByID(userID, id int) (*Saving, error) {
 	var s Saving
 	var goal sql.NullFloat64
 	var comment sql.NullString
 
 	err := r.db.QueryRow(
-		"SELECT id, name, amount, goal, comment FROM savings WHERE id = ?",
-		id,
+		"SELECT id, name, amount, goal, comment FROM savings WHERE id = ? AND user_id = ?",
+		id, userID,
 	).Scan(&s.ID, &s.Name, &s.Amount, &goal, &comment)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, nil // Возвращаем nil вместо ошибки
+			return nil, nil
 		}
 		return nil, fmt.Errorf("ошибка запроса: %w", err)
 	}
@@ -250,16 +331,28 @@ func (r *SQLiteRepository) GetSavingByID(id int) (*Saving, error) {
 	if comment.Valid {
 		s.Comment = comment.String
 	}
+	s.UserID = userID
 
 	return &s, nil
 }
 
-func (r *SQLiteRepository) UpdateSavingAmount(id int, amount float64) error {
-	_, err := r.db.Exec("UPDATE savings SET amount = ? WHERE id = ?", amount, id)
+func (r *SQLiteRepository) UpdateSavingAmount(userID, id int, amount float64) error {
+	// Проверяем существование копилки
+	if _, err := r.GetSavingByID(userID, id); err != nil {
+		return err
+	}
+
+	_, err := r.db.Exec(
+		"UPDATE savings SET amount = ? WHERE id = ? AND user_id = ?",
+		amount, id, userID,
+	)
 	return err
 }
 
-func (r *SQLiteRepository) CreateSaving(name string, goal *float64) error {
-	_, err := r.db.Exec("INSERT INTO savings (name, amount, goal) VALUES (?, 0, ?)", name, goal)
+func (r *SQLiteRepository) CreateSaving(userID int, name string, goal *float64) error {
+	_, err := r.db.Exec(
+		"INSERT INTO savings (user_id, name, amount, goal) VALUES (?, ?, 0, ?)",
+		userID, name, goal,
+	)
 	return err
 }
