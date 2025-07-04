@@ -8,7 +8,6 @@ import (
 
 	"github.com/IlyaMakar/finance_bot/internal/bot"
 	"github.com/IlyaMakar/finance_bot/internal/repository"
-	"github.com/IlyaMakar/finance_bot/internal/service"
 	"github.com/joho/godotenv"
 )
 
@@ -34,9 +33,8 @@ func main() {
 	}
 
 	repo := repository.NewRepository(db)
-	svc := service.NewService(repo)
 
-	botInstance, err := bot.NewBot(token, svc)
+	botInstance, err := bot.NewBot(token, repo)
 	if err != nil {
 		log.Fatalf("не удалось создать бота: %v", err)
 	}

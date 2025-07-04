@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/IlyaMakar/finance_bot/internal/repository"
 	"github.com/IlyaMakar/finance_bot/internal/service"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -19,8 +20,8 @@ const (
 )
 
 type Bot struct {
-	bot      *tgbotapi.BotAPI
-	services *service.FinanceService
+	bot  *tgbotapi.BotAPI
+	repo *repository.SQLiteRepository // Теперь храним только репозиторий
 }
 
 type UserState struct {
@@ -33,15 +34,13 @@ type UserState struct {
 
 var userStates = make(map[int64]UserState)
 
-func NewBot(token string, services *service.FinanceService) (*Bot, error) {
+func NewBot(token string, repo *repository.SQLiteRepository) (*Bot, error) {
 	botAPI, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
 		return nil, err
 	}
 
-	initBasicCategories(services)
-
-	return &Bot{bot: botAPI, services: services}, nil
+	return &Bot{bot: botAPI, repo: repo}, nil
 }
 
 func (b *Bot) startAddTransaction(chatID int64) {
@@ -56,8 +55,8 @@ func (b *Bot) startAddTransaction(chatID int64) {
 	b.send(chatID, msg)
 }
 
-func (b *Bot) startAddToSaving(chatID int64) {
-	savings, err := b.services.GetSavings()
+func (b *Bot) startAddToSaving(chatID int64, svc *service.FinanceService) {
+	savings, err := svc.GetSavings()
 	if err != nil || len(savings) == 0 {
 		b.send(chatID, tgbotapi.NewMessage(chatID, "Нет доступных копилок для пополнения"))
 		return
@@ -75,22 +74,27 @@ func (b *Bot) startAddToSaving(chatID int64) {
 	b.send(chatID, msg)
 }
 
-func initBasicCategories(s *service.FinanceService) {
-	basic := []struct{ name, typ string }{
+func (b *Bot) initBasicCategories(user *repository.User) {
+	basicCategories := []struct{ name, typ string }{ // Переименовали переменную basic в basicCategories
 		{"🍎 Продукты", "expense"},
 		{"🚗 Транспорт", "expense"},
 		{"🏠 ЖКХ", "expense"},
 		{"💼 Зарплата", "income"},
 		{"🎢 Развлечения", "expense"},
 	}
-	exists, _ := s.GetCategories()
+
+	exists, _ := b.repo.GetCategories(user.ID)
 	wrap := map[string]bool{}
 	for _, c := range exists {
 		wrap[c.Name] = true
 	}
-	for _, b := range basic {
-		if !wrap[b.name] {
-			if _, err := s.CreateCategory(b.name, b.typ, nil); err != nil {
+
+	for _, category := range basicCategories { // Переименовали b в category
+		if !wrap[category.name] {
+			if _, err := b.repo.CreateCategory(user.ID, repository.Category{
+				Name: category.name,
+				Type: category.typ,
+			}); err != nil {
 				log.Println("category init:", err)
 			}
 		}
@@ -111,9 +115,26 @@ func (b *Bot) Start() {
 }
 
 func (b *Bot) handleMessage(m *tgbotapi.Message) {
+	// 1. Получаем или создаем пользователя
+	user, err := b.repo.GetOrCreateUser(
+		m.From.ID,
+		m.From.UserName,
+		m.From.FirstName,
+		m.From.LastName,
+	)
+	if err != nil {
+		b.sendError(m.Chat.ID, err)
+		return
+	}
+
+	// 2. Создаем сервис для этого пользователя
+	svc := service.NewService(b.repo, user)
+
+	// 3. Обрабатываем команды
 	switch m.Text {
 	case "/start":
-		welcomeMsg := `👋 <b>Привет! Я ваш финансовый помощник!</b>
+		b.initBasicCategories(user)
+		welcomeMsg := `👋 <b>Привет! Я ваш финансовый помошник!</b>
 
 📌 <i>Вот что я умею:</i>
 
@@ -124,7 +145,6 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 ⚙️ <b>Настройки</b> - персонализация бота
 
 Выберите действие кнопкой ниже:`
-
 		msg := tgbotapi.NewMessage(m.Chat.ID, welcomeMsg)
 		msg.ParseMode = "HTML"
 		msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(
@@ -146,19 +166,19 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 		b.startAddTransaction(m.Chat.ID)
 
 	case "📊 Статистика":
-		b.showReport(m.Chat.ID)
+		b.showReport(m.Chat.ID, svc)
 
 	case "💵 Накопления":
-		b.showSavings(m.Chat.ID)
+		b.showSavings(m.Chat.ID, svc)
 
 	case "💰 Пополнить копилку":
-		b.startAddToSaving(m.Chat.ID)
+		b.startAddToSaving(m.Chat.ID, svc)
 
 	case "⚙️ Настройки":
 		b.showSettingsMenu(m.Chat.ID)
 
 	default:
-		b.handleUserInput(m)
+		b.handleUserInput(m, svc)
 	}
 }
 
@@ -173,8 +193,8 @@ func (b *Bot) showSettingsMenu(chatID int64) {
 	b.send(chatID, msg)
 }
 
-func (b *Bot) showCategoryManagement(chatID int64) {
-	categories, err := b.services.GetCategories()
+func (b *Bot) showCategoryManagement(chatID int64, svc *service.FinanceService) {
+	categories, err := svc.GetCategories()
 	if err != nil {
 		b.sendError(chatID, err)
 		return
@@ -203,8 +223,8 @@ func (b *Bot) showCategoryManagement(chatID int64) {
 	b.send(chatID, msg)
 }
 
-func (b *Bot) showCategoryActions(chatID int64, categoryID int) {
-	category, err := b.services.GetCategoryByID(categoryID)
+func (b *Bot) showCategoryActions(chatID int64, categoryID int, svc *service.FinanceService) {
+	category, err := svc.GetCategoryByID(categoryID)
 	if err != nil {
 		b.sendError(chatID, err)
 		return
@@ -228,30 +248,42 @@ func (b *Bot) showCategoryActions(chatID int64, categoryID int) {
 }
 
 func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
-
 	chatID := q.From.ID
 	data := q.Data
 
+	user, err := b.repo.GetOrCreateUser(
+		q.From.ID,
+		q.From.UserName,
+		q.From.FirstName,
+		q.From.LastName,
+	)
+	if err != nil {
+		b.sendError(chatID, err)
+		return
+	}
+
+	svc := service.NewService(b.repo, user)
+
 	switch {
 	case data == "manage_categories":
-		b.showCategoryManagement(chatID)
+		b.showCategoryManagement(chatID, svc)
 	case data == "settings_back":
 		b.showSettingsMenu(chatID)
 	case strings.HasPrefix(data, CallbackEditCategory):
 		catID, _ := strconv.Atoi(data[len(CallbackEditCategory):])
-		b.showCategoryActions(chatID, catID)
+		b.showCategoryActions(chatID, catID, svc)
 	case strings.HasPrefix(data, CallbackRenameCategory):
 		catID, _ := strconv.Atoi(data[len(CallbackRenameCategory):])
 		state := userStates[chatID]
 		state.Step = "rename_category"
 		state.TempCategoryID = catID
 		userStates[chatID] = state
-		b.send(chatID, tgbotapi.NewMessage(chatID, "Введите новое название категории:"))
+		b.send(chatID, tgbotapi.NewMessage(chatID, "Введите новое название категории:")) // Убрал лишний параметр
 	case strings.HasPrefix(data, CallbackDeleteCategory):
 		catID, _ := strconv.Atoi(data[len(CallbackDeleteCategory):])
-		b.handleDeleteCategory(chatID, catID, q.Message.MessageID)
+		b.handleDeleteCategory(chatID, catID, q.Message.MessageID, svc)
 	case q.Data == "type_income" || q.Data == "type_expense":
-		b.handleTypeSelect(chatID, q.Message.MessageID, q.Data)
+		b.handleTypeSelect(chatID, q.Message.MessageID, q.Data, svc) // Добавил svc
 	case strings.HasPrefix(q.Data, "add_to_saving_"):
 		parts := strings.Split(q.Data, "_")
 		if len(parts) < 4 {
@@ -265,7 +297,7 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 			return
 		}
 
-		saving, err := b.services.GetSavingByID(savingID)
+		saving, err := svc.GetSavingByID(savingID) // Используем svc вместо b.services
 		if err != nil {
 			b.sendError(chatID, fmt.Errorf("не удалось найти копилку"))
 			return
@@ -280,34 +312,30 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		b.bot.Send(edit)
 
 		b.send(chatID, tgbotapi.NewMessage(chatID, fmt.Sprintf("Вы выбрали копилку: %s\nВведите сумму для пополнения:", saving.Name)))
-
 	case strings.HasPrefix(q.Data, "cat_"):
 		catID, err := strconv.Atoi(q.Data[4:])
 		if err != nil {
 			b.sendError(chatID, fmt.Errorf("ошибка обработки ID категории"))
 			return
 		}
-		b.handleCatSelect(int(chatID), catID)
-
+		b.handleCatSelect(int(chatID), catID) // Добавил svc
 	case q.Data == "other_cat":
 		state := userStates[chatID]
 		state.Step = "new_cat"
 		userStates[chatID] = state
 		b.send(chatID, tgbotapi.NewMessage(chatID, "Введите название новой категории:"))
-
 	case q.Data == "create_saving":
 		state := userStates[chatID]
 		state.Step = "create_saving_name"
 		userStates[chatID] = state
 		b.send(chatID, tgbotapi.NewMessage(chatID, "Введите название копилки:"))
-
 	default:
 		b.bot.Send(tgbotapi.NewCallback(q.ID, ""))
 	}
 }
 
-func (b *Bot) handleDeleteCategory(chatID int64, categoryID int, messageID int) {
-	transactions, err := b.services.GetTransactionsForPeriod(time.Now().AddDate(-10, 0, 0), time.Now())
+func (b *Bot) handleDeleteCategory(chatID int64, categoryID int, messageID int, svc *service.FinanceService) {
+	transactions, err := svc.GetTransactionsForPeriod(time.Now().AddDate(-10, 0, 0), time.Now())
 	if err != nil {
 		b.sendError(chatID, err)
 		return
@@ -327,7 +355,7 @@ func (b *Bot) handleDeleteCategory(chatID int64, categoryID int, messageID int) 
 		return
 	}
 
-	err = b.services.DeleteCategory(categoryID)
+	err = svc.DeleteCategory(categoryID)
 	if err != nil {
 		b.sendError(chatID, err)
 		return
@@ -346,8 +374,7 @@ func (b *Bot) handleDeleteCategory(chatID int64, categoryID int, messageID int) 
 	b.send(chatID, edit)
 }
 
-func (b *Bot) handleUserInput(m *tgbotapi.Message) {
-
+func (b *Bot) handleUserInput(m *tgbotapi.Message, svc *service.FinanceService) {
 	s, ok := userStates[m.From.ID]
 	if !ok {
 		b.sendMainMenu(m.Chat.ID, "Выберите действие:")
@@ -356,24 +383,25 @@ func (b *Bot) handleUserInput(m *tgbotapi.Message) {
 
 	switch s.Step {
 	case "rename_category":
-		b.handleRenameCategory(m)
+		b.handleRenameCategory(m, svc)
 	case "enter_amount":
 		b.handleAmount(m)
 	case "enter_comment":
-		b.handleComment(m)
+		b.handleComment(m, svc)
 	case "enter_saving_amount":
-		b.handleSavingAmount(m)
+		b.handleSavingAmount(m, svc)
 	case "new_cat":
-		b.handleNewCategory(m)
+		b.handleNewCategory(m, svc)
 	case "create_saving_name":
 		b.handleCreateSavingName(m)
 	case "create_saving_goal":
 		b.handleCreateSavingGoal(m)
 	default:
+		b.sendMainMenu(m.Chat.ID, "Неизвестная команда")
 	}
 }
 
-func (b *Bot) handleRenameCategory(m *tgbotapi.Message) {
+func (b *Bot) handleRenameCategory(m *tgbotapi.Message, svc *service.FinanceService) {
 	state := userStates[m.From.ID]
 	newName := strings.TrimSpace(m.Text)
 
@@ -382,7 +410,7 @@ func (b *Bot) handleRenameCategory(m *tgbotapi.Message) {
 		return
 	}
 
-	err := b.services.RenameCategory(state.TempCategoryID, newName)
+	err := svc.RenameCategory(state.TempCategoryID, newName)
 	if err != nil {
 		b.sendError(m.Chat.ID, err)
 		return
@@ -390,14 +418,14 @@ func (b *Bot) handleRenameCategory(m *tgbotapi.Message) {
 
 	delete(userStates, m.From.ID)
 	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "✅ Категория успешно переименована"))
-	b.showCategoryManagement(m.Chat.ID)
+	b.showCategoryManagement(m.Chat.ID, svc)
 }
 
-func (b *Bot) handleTypeSelect(chatID int64, msgID int, data string) {
+func (b *Bot) handleTypeSelect(chatID int64, msgID int, data string, svc *service.FinanceService) {
 	u := UserState{Step: "select_cat", TempType: data[5:]}
 	userStates[chatID] = u
 
-	cats, _ := b.services.GetCategories()
+	cats, _ := svc.GetCategories()
 	var rows [][]tgbotapi.InlineKeyboardButton
 	for _, c := range cats {
 		if c.Type == u.TempType {
@@ -424,7 +452,7 @@ func (b *Bot) handleCatSelect(chatID int, catID int) {
 	b.send(int64(chatID), msg)
 }
 
-func (b *Bot) handleSavingAmount(m *tgbotapi.Message) {
+func (b *Bot) handleSavingAmount(m *tgbotapi.Message, svc *service.FinanceService) {
 	amount, err := strconv.ParseFloat(m.Text, 64)
 	if err != nil || amount <= 0 {
 		b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "Введите корректную положительную сумму:"))
@@ -434,14 +462,14 @@ func (b *Bot) handleSavingAmount(m *tgbotapi.Message) {
 	state := userStates[m.From.ID]
 	savingID := state.TempCategoryID
 
-	saving, err := b.services.GetSavingByID(savingID)
+	saving, err := svc.GetSavingByID(savingID) // Используем svc
 	if err != nil {
 		b.sendError(m.Chat.ID, fmt.Errorf("не удалось получить данные копилки"))
 		return
 	}
 
 	newAmount := saving.Amount + amount
-	if err := b.services.UpdateSavingAmount(savingID, newAmount); err != nil {
+	if err := svc.UpdateSavingAmount(savingID, newAmount); err != nil {
 		b.sendError(m.Chat.ID, err)
 		return
 	}
@@ -451,7 +479,7 @@ func (b *Bot) handleSavingAmount(m *tgbotapi.Message) {
 			saving.Name, amount, newAmount)))
 
 	delete(userStates, m.From.ID)
-	b.showSavings(m.Chat.ID)
+	b.showSavings(m.Chat.ID, svc)
 }
 
 func (b *Bot) handleAmount(m *tgbotapi.Message) {
@@ -470,12 +498,12 @@ func (b *Bot) handleAmount(m *tgbotapi.Message) {
 	b.send(m.Chat.ID, msg)
 }
 
-func (b *Bot) handleComment(m *tgbotapi.Message) {
+func (b *Bot) handleComment(m *tgbotapi.Message, svc *service.FinanceService) {
 	s := userStates[m.From.ID]
 	if m.Text != "Пропустить" {
 		s.TempComment = m.Text
 	}
-	c, err := b.services.GetCategoryByID(s.TempCategoryID)
+	c, err := svc.GetCategoryByID(s.TempCategoryID) // Используем svc
 	if err != nil {
 		b.sendError(m.Chat.ID, err)
 		return
@@ -484,7 +512,7 @@ func (b *Bot) handleComment(m *tgbotapi.Message) {
 	if c.Type == "expense" {
 		amt = -amt
 	}
-	if _, err := b.services.AddTransaction(amt, s.TempCategoryID, "card", s.TempComment); err != nil {
+	if _, err := svc.AddTransaction(amt, s.TempCategoryID, "card", s.TempComment); err != nil {
 		b.sendError(m.Chat.ID, err)
 		return
 	}
@@ -496,16 +524,13 @@ func (b *Bot) handleComment(m *tgbotapi.Message) {
 	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID,
 		fmt.Sprintf("✅ %s: %s, %.2f руб.", label, c.Name, amt)))
 
-	// Убеждаемся, что состояние пользователя сбрасывается
 	delete(userStates, m.From.ID)
-
-	// Явно отправляем главное меню после сохранения операции
 	b.sendMainMenu(m.Chat.ID, "✅ Операция сохранена")
 }
 
-func (b *Bot) handleNewCategory(m *tgbotapi.Message) {
+func (b *Bot) handleNewCategory(m *tgbotapi.Message, svc *service.FinanceService) {
 	s := userStates[m.From.ID]
-	if _, err := b.services.CreateCategory(m.Text, s.TempType, nil); err != nil {
+	if _, err := svc.CreateCategory(m.Text, s.TempType, nil); err != nil {
 		b.sendError(m.Chat.ID, err)
 		return
 	}
@@ -514,12 +539,12 @@ func (b *Bot) handleNewCategory(m *tgbotapi.Message) {
 	b.sendMainMenu(m.Chat.ID, "Что дальше?")
 }
 
-func (b *Bot) showReport(chatID int64) {
+func (b *Bot) showReport(chatID int64, svc *service.FinanceService) {
 	now := time.Now()
 	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	end := start.AddDate(0, 1, 0)
 
-	trans, err := b.services.GetTransactionsForPeriod(start, end)
+	trans, err := svc.GetTransactionsForPeriod(start, end)
 	if err != nil {
 		b.sendError(chatID, fmt.Errorf("не удалось получить статистику"))
 		return
@@ -530,7 +555,7 @@ func (b *Bot) showReport(chatID int64) {
 	expenseDetails := make(map[string]float64)
 
 	for _, t := range trans {
-		c, err := b.services.GetCategoryByID(t.CategoryID)
+		c, err := svc.GetCategoryByID(t.CategoryID)
 		categoryName := "Неизвестно"
 		if err == nil {
 			categoryName = c.Name
@@ -580,8 +605,8 @@ func (b *Bot) showReport(chatID int64) {
 	b.send(chatID, msg)
 }
 
-func (b *Bot) showSavings(chatID int64) {
-	s, err := b.services.GetSavings()
+func (b *Bot) showSavings(chatID int64, svc *service.FinanceService) {
+	s, err := svc.GetSavings()
 	if err != nil {
 		b.send(chatID, tgbotapi.NewMessage(chatID, "Ошибка при получении накоплений"))
 		return
@@ -619,11 +644,10 @@ func (b *Bot) handleCreateSavingName(m *tgbotapi.Message) {
 	}
 
 	s := userStates[m.From.ID]
-	s.TempComment = name          // Сохраняем название копилки во временном комментарии
-	s.Step = "create_saving_goal" // Устанавливаем следующий шаг: ввод цели
+	s.TempComment = name
+	s.Step = "create_saving_goal"
 	userStates[m.From.ID] = s
 
-	// Отправляем запрос на ввод цели, прикрепляя кнопку "Пропустить"
 	msg := tgbotapi.NewMessage(m.Chat.ID, "Введите цель копилки (число) или отправьте 'Пропустить':")
 	msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
@@ -647,7 +671,21 @@ func (b *Bot) handleCreateSavingGoal(m *tgbotapi.Message) {
 		goal = &value
 	}
 
-	if err := b.services.CreateSaving(s.TempComment, goal); err != nil {
+	// Получаем пользователя для создания сервиса
+	user, err := b.repo.GetOrCreateUser(
+		m.From.ID,
+		m.From.UserName,
+		m.From.FirstName,
+		m.From.LastName,
+	)
+	if err != nil {
+		b.sendError(m.Chat.ID, err)
+		return
+	}
+
+	svc := service.NewService(b.repo, user)
+
+	if err := svc.CreateSaving(s.TempComment, goal); err != nil {
 		b.sendError(m.Chat.ID, err)
 		return
 	}
@@ -658,12 +696,9 @@ func (b *Bot) handleCreateSavingGoal(m *tgbotapi.Message) {
 
 	removeKeyboardMsg := tgbotapi.NewMessage(m.Chat.ID, "")
 	removeKeyboardMsg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
-	_, err := b.bot.Send(removeKeyboardMsg)
-	if err != nil {
-	} else {
-	}
+	b.bot.Send(removeKeyboardMsg)
 
-	b.showSavings(m.Chat.ID)
+	b.showSavings(m.Chat.ID, svc)
 }
 
 func (b *Bot) sendMainMenu(chatID int64, text string) {
@@ -690,8 +725,8 @@ func (b *Bot) sendError(chatID int64, err error) {
 }
 
 func (b *Bot) send(chatID int64, c tgbotapi.Chattable) {
-	msg, err := b.bot.Send(c)
+	_, err := b.bot.Send(c)
 	if err != nil {
-		log.Printf("Ошибка отправки в чат %d: %v\nСообщение: %+v", chatID, err, msg)
+		log.Printf("Ошибка отправки в чат %d: %v", chatID, err)
 	}
 }
