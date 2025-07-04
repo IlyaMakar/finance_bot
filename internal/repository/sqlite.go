@@ -13,12 +13,13 @@ type SQLiteRepository struct {
 }
 
 type User struct {
-	ID         int
-	TelegramID int64
-	Username   string
-	FirstName  string
-	LastName   string
-	CreatedAt  time.Time
+	ID                   int
+	TelegramID           int64
+	Username             string
+	FirstName            string
+	LastName             string
+	CreatedAt            time.Time
+	NotificationsEnabled bool
 }
 
 type Category struct {
@@ -62,13 +63,14 @@ func NewSQLiteDB(path string) (*sql.DB, error) {
 func InitDB(db *sql.DB) error {
 	schema := `
 CREATE TABLE IF NOT EXISTS users (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	telegram_id INTEGER NOT NULL UNIQUE,
-	username TEXT,
-	first_name TEXT,
-	last_name TEXT,
-	created_at TEXT NOT NULL
-);
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL UNIQUE,
+        username TEXT,
+        first_name TEXT,
+        last_name TEXT,
+        created_at TEXT NOT NULL,
+        notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE
+    );
 
 CREATE TABLE IF NOT EXISTS categories (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -118,7 +120,54 @@ func NewRepository(db *sql.DB) *SQLiteRepository {
 	return &SQLiteRepository{db: db}
 }
 
-// Методы для работы с пользователями
+func (r *SQLiteRepository) UpdateUserNotifications(userID int, enabled bool) error {
+	_, err := r.db.Exec(
+		"UPDATE users SET notifications_enabled = ? WHERE id = ?",
+		enabled, userID,
+	)
+	return err
+}
+
+func (r *SQLiteRepository) GetUserNotificationsEnabled(userID int) (bool, error) {
+	var enabled bool
+	err := r.db.QueryRow(
+		"SELECT notifications_enabled FROM users WHERE id = ?",
+		userID,
+	).Scan(&enabled)
+	return enabled, err
+}
+func (r *SQLiteRepository) HasTransactionsToday(userID int) (bool, error) {
+	now := time.Now()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	end := start.AddDate(0, 0, 1)
+
+	var count int
+	err := r.db.QueryRow(
+		"SELECT COUNT(*) FROM transactions WHERE user_id = ? AND date >= ? AND date < ?",
+		userID, start.Format(time.RFC3339), end.Format(time.RFC3339),
+	).Scan(&count)
+
+	return count > 0, err
+}
+
+func (r *SQLiteRepository) GetAllUsers() ([]User, error) {
+	rows, err := r.db.Query("SELECT id, telegram_id FROM users")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.TelegramID); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
+}
+
 func (r *SQLiteRepository) GetOrCreateUser(telegramID int64, username, firstName, lastName string) (*User, error) {
 	var user User
 	var createdAt string
@@ -211,7 +260,6 @@ func (r *SQLiteRepository) CreateCategory(userID int, c Category) (int, error) {
 }
 
 func (r *SQLiteRepository) RenameCategory(userID, id int, newName string) error {
-	// Проверяем, что категория принадлежит пользователю
 	if _, err := r.GetCategoryByID(userID, id); err != nil {
 		return err
 	}
@@ -224,7 +272,6 @@ func (r *SQLiteRepository) RenameCategory(userID, id int, newName string) error 
 }
 
 func (r *SQLiteRepository) DeleteCategory(userID, id int) error {
-	// Проверяем, что категория принадлежит пользователю
 	if _, err := r.GetCategoryByID(userID, id); err != nil {
 		return err
 	}
@@ -237,7 +284,6 @@ func (r *SQLiteRepository) DeleteCategory(userID, id int) error {
 }
 
 func (r *SQLiteRepository) AddTransaction(userID int, t Transaction) (int, error) {
-	// Проверяем, что категория принадлежит пользователю
 	if _, err := r.GetCategoryByID(userID, t.CategoryID); err != nil {
 		return 0, err
 	}
@@ -277,7 +323,6 @@ func (r *SQLiteRepository) GetTransactionsByPeriod(userID int, start, end time.T
 	return res, nil
 }
 
-// Методы для работы с копилками
 func (r *SQLiteRepository) GetSavings(userID int) ([]Saving, error) {
 	rows, err := r.db.Query(
 		"SELECT id, name, amount, goal, comment FROM savings WHERE user_id = ? ORDER BY name",
@@ -337,7 +382,6 @@ func (r *SQLiteRepository) GetSavingByID(userID, id int) (*Saving, error) {
 }
 
 func (r *SQLiteRepository) UpdateSavingAmount(userID, id int, amount float64) error {
-	// Проверяем существование копилки
 	if _, err := r.GetSavingByID(userID, id); err != nil {
 		return err
 	}
@@ -355,4 +399,35 @@ func (r *SQLiteRepository) CreateSaving(userID int, name string, goal *float64) 
 		userID, name, goal,
 	)
 	return err
+}
+
+func (s *Saving) Progress() float64 {
+	if s.Goal == nil || *s.Goal == 0 {
+		return 0
+	}
+	return (s.Amount / *s.Goal) * 100
+}
+
+func (r *SQLiteRepository) ClearUserData(userID int) error {
+	_, err := r.db.Exec("DELETE FROM transactions WHERE user_id = ?", userID)
+	if err != nil {
+		return fmt.Errorf("ошибка удаления транзакций: %w", err)
+	}
+
+	_, err = r.db.Exec("DELETE FROM savings WHERE user_id = ?", userID)
+	if err != nil {
+		return fmt.Errorf("ошибка удаления копилок: %w", err)
+	}
+
+	_, err = r.db.Exec("DELETE FROM categories WHERE user_id = ?", userID)
+	if err != nil {
+		return fmt.Errorf("ошибка удаления категорий: %w", err)
+	}
+
+	_, err = r.db.Exec("UPDATE users SET notifications_enabled = TRUE WHERE id = ?", userID)
+	if err != nil {
+		return fmt.Errorf("ошибка сброса настроек: %w", err)
+	}
+
+	return nil
 }

@@ -27,11 +27,10 @@ func (s *FinanceService) DeleteCategory(id int) error {
 }
 
 func (s *FinanceService) RenameCategory(id int, newName string) error {
-	// Проверка принадлежности категории пользователю
 	if _, err := s.repo.GetCategoryByID(s.userID, id); err != nil {
 		return err
 	}
-	return s.repo.RenameCategory(s.userID, id, newName) // Добавлен s.userID
+	return s.repo.RenameCategory(s.userID, id, newName)
 }
 
 func (s *FinanceService) GetCategories() ([]repository.Category, error) {
@@ -51,7 +50,6 @@ func (s *FinanceService) GetCategoryByID(id int) (*repository.Category, error) {
 }
 
 func (s *FinanceService) AddTransaction(amount float64, categoryID int, method, comment string) (int, error) {
-	// Проверяем, что категория принадлежит пользователю
 	c, err := s.repo.GetCategoryByID(s.userID, categoryID)
 	if err != nil {
 		return 0, fmt.Errorf("категория не найдена")
@@ -107,4 +105,16 @@ func (s *FinanceService) UpdateSavingAmount(id int, amount float64) error {
 
 func (s *FinanceService) CreateSaving(name string, goal *float64) error {
 	return s.repo.CreateSaving(s.userID, name, goal)
+}
+
+func (s *FinanceService) SetNotificationsEnabled(enabled bool) error {
+	return s.repo.UpdateUserNotifications(s.userID, enabled)
+}
+
+func (s *FinanceService) GetNotificationsEnabled() (bool, error) {
+	return s.repo.GetUserNotificationsEnabled(s.userID)
+}
+
+func (s *FinanceService) ClearUserData() error {
+	return s.repo.ClearUserData(s.userID)
 }
