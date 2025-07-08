@@ -114,3 +114,7 @@ func (s *FinanceService) SetNotificationsEnabled(enabled bool) error {
 func (s *FinanceService) GetNotificationsEnabled() (bool, error) {
 	return s.repo.GetUserNotificationsEnabled(s.userID)
 }
+
+func (s *FinanceService) ClearUserData() error {
+	return s.repo.ClearUserData(s.userID)
+}

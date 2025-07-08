@@ -400,3 +400,27 @@ func (r *SQLiteRepository) CreateSaving(userID int, name string, goal *float64) 
 	)
 	return err
 }
+
+func (r *SQLiteRepository) ClearUserData(userID int) error {
+	_, err := r.db.Exec("DELETE FROM transactions WHERE user_id = ?", userID)
+	if err != nil {
+		return fmt.Errorf("ошибка удаления транзакций: %w", err)
+	}
+
+	_, err = r.db.Exec("DELETE FROM savings WHERE user_id = ?", userID)
+	if err != nil {
+		return fmt.Errorf("ошибка удаления копилок: %w", err)
+	}
+
+	_, err = r.db.Exec("DELETE FROM categories WHERE user_id = ?", userID)
+	if err != nil {
+		return fmt.Errorf("ошибка удаления категорий: %w", err)
+	}
+
+	_, err = r.db.Exec("UPDATE users SET notifications_enabled = TRUE WHERE id = ?", userID)
+	if err != nil {
+		return fmt.Errorf("ошибка сброса настроек: %w", err)
+	}
+
+	return nil
+}

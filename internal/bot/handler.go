@@ -235,6 +235,9 @@ func (b *Bot) showSettingsMenu(chatID int64) {
 			tgbotapi.NewInlineKeyboardButtonData("🔔 Уведомления", "notification_settings"),
 			tgbotapi.NewInlineKeyboardButtonData("📝 Категории", "manage_categories"),
 		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🧹 Очистить все данные", "confirm_clear_data"),
+		),
 	)
 	b.send(chatID, msg)
 }
@@ -420,6 +423,29 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		state.Step = "create_saving_name"
 		userStates[chatID] = state
 		b.send(chatID, tgbotapi.NewMessage(chatID, "💸 Введите название копилки:"))
+	case data == "confirm_clear_data":
+		msg := tgbotapi.NewMessage(chatID, "⚠️ <b>Внимание!</b>\n\nВы действительно хотите удалить ВСЕ свои данные? Это действие нельзя отменить!\n\nВсе транзакции, категории и копилки будут удалены.")
+		msg.ParseMode = "HTML"
+		msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("✅ Да, удалить все", "clear_data"),
+				tgbotapi.NewInlineKeyboardButtonData("❌ Нет, отменить", "settings_back"),
+			),
+		)
+		b.send(chatID, msg)
+
+	case data == "clear_data":
+		err := svc.ClearUserData()
+		if err != nil {
+			b.sendError(chatID, err)
+			return
+		}
+
+		// Создаем базовые категории заново
+		b.initBasicCategories(user)
+
+		b.send(chatID, tgbotapi.NewMessage(chatID, "🧹 Все данные успешно удалены! Бот сброшен к начальному состоянию."))
+		b.sendMainMenu(chatID, "🔄 Вы можете начать заново!")
 	default:
 		b.bot.Send(tgbotapi.NewCallback(q.ID, ""))
 	}
@@ -681,13 +707,13 @@ func (b *Bot) showReport(chatID int64, svc *service.FinanceService) {
 			totalIncome += t.Amount
 			incomeDetails[categoryName] += t.Amount
 		} else {
-			totalExpense += t.Amount
-			expenseDetails[categoryName] += t.Amount
+			totalExpense += math.Abs(t.Amount)
+			expenseDetails[categoryName] += math.Abs(t.Amount)
 		}
 	}
 
 	format := func(amount float64) string {
-		return fmt.Sprintf("%.2f ₽", math.Abs(amount))
+		return fmt.Sprintf("%.2f ₽", amount)
 	}
 
 	var incomeDetailsStr strings.Builder
@@ -700,9 +726,11 @@ func (b *Bot) showReport(chatID int64, svc *service.FinanceService) {
 		expenseDetailsStr.WriteString(fmt.Sprintf("┣ 📉 %s: %s\n", name, format(amount)))
 	}
 
+	balance := totalIncome - totalExpense
+
 	msgText := fmt.Sprintf(
 		"📊 <b>Финансовая статистика</b>\n📅 Период: <i>%s</i>\n\n"+
-			"💰 <b>Доходы:</b> %s\n%s\n"+
+			"📈 <b>Доходы:</b> %s\n%s\n"+
 			"📉 <b>Расходы:</b> %s\n%s\n"+
 			"━━━━━━━━━━━━━━━\n"+
 			"💸 <b>Баланс:</b> <u>%s</u>",
@@ -711,7 +739,7 @@ func (b *Bot) showReport(chatID int64, svc *service.FinanceService) {
 		incomeDetailsStr.String(),
 		format(totalExpense),
 		expenseDetailsStr.String(),
-		format(totalIncome+totalExpense),
+		format(balance),
 	)
 
 	msg := tgbotapi.NewMessage(chatID, msgText)
