@@ -50,7 +50,7 @@ func NewBot(token string, repo *repository.SQLiteRepository) (*Bot, error) {
 func (b *Bot) startAddTransaction(chatID int64) {
 	keyb := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("💰 Доход", "type_income"),
+			tgbotapi.NewInlineKeyboardButtonData("📈 Доход", "type_income"),
 			tgbotapi.NewInlineKeyboardButtonData("📉 Расход", "type_expense"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
@@ -82,6 +82,19 @@ func (b *Bot) startAddToSaving(chatID int64, svc *service.FinanceService) {
 	msg := tgbotapi.NewMessage(chatID, "🎯 Выберите копилку для пополнения:")
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
 	b.send(chatID, msg)
+}
+
+func (b *Bot) createSavingsKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("➕ Новая копилка", "create_saving"),
+			tgbotapi.NewInlineKeyboardButtonData("💰 Пополнить", "add_to_saving"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📊 Статистика", "savings_stats"),
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "main_menu"),
+		),
+	)
 }
 
 func (b *Bot) initBasicCategories(user *repository.User) {
@@ -216,9 +229,6 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 	case "💵 Накопления":
 		b.showSavings(m.Chat.ID, svc)
 
-	case "💰 Пополнить копилку":
-		b.startAddToSaving(m.Chat.ID, svc)
-
 	case "⚙️ Настройки":
 		b.showSettingsMenu(m.Chat.ID)
 
@@ -330,6 +340,7 @@ func (b *Bot) showCategoryActions(chatID int64, categoryID int, svc *service.Fin
 }
 
 func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
+	_, _ = b.bot.Request(tgbotapi.NewCallback(q.ID, ""))
 	chatID := q.From.ID
 	data := q.Data
 
@@ -360,6 +371,16 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	case strings.HasPrefix(data, CallbackEditCategory):
 		catID, _ := strconv.Atoi(data[len(CallbackEditCategory):])
 		b.showCategoryActions(chatID, catID, svc)
+	case data == "add_to_saving":
+		b.startAddToSaving(chatID, svc)
+	case data == "savings_stats":
+		b.showSavingsStats(chatID, svc)
+	case data == "savings_stats":
+		b.showSavingsStats(chatID, svc)
+	case data == "show_savings":
+		b.showSavings(chatID, svc)
+	case data == "main_menu":
+		b.sendMainMenu(chatID, "Главное меню")
 	case strings.HasPrefix(data, CallbackRenameCategory):
 		catID, _ := strconv.Atoi(data[len(CallbackRenameCategory):])
 		state := userStates[chatID]
@@ -367,6 +388,30 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		state.TempCategoryID = catID
 		userStates[chatID] = state
 		b.send(chatID, tgbotapi.NewMessage(chatID, "✏️ Введите новое название категории:"))
+	case data == "skip_comment":
+		editMsg := tgbotapi.NewEditMessageReplyMarkup(chatID, q.Message.MessageID, tgbotapi.InlineKeyboardMarkup{})
+		b.bot.Send(editMsg)
+		s := userStates[chatID]
+		s.TempComment = ""
+		userStates[chatID] = s
+		b.handleComment(&tgbotapi.Message{
+			Chat: &tgbotapi.Chat{ID: chatID},
+			From: q.From,
+			Text: "Пропустить",
+		}, svc)
+
+	case data == "skip_saving_goal":
+		editMsg := tgbotapi.NewEditMessageReplyMarkup(chatID, q.Message.MessageID, tgbotapi.InlineKeyboardMarkup{})
+		b.bot.Send(editMsg)
+		s := userStates[chatID]
+		s.TempAmount = 0
+		userStates[chatID] = s
+		b.handleCreateSavingGoal(&tgbotapi.Message{
+			Chat: &tgbotapi.Chat{ID: chatID},
+			From: q.From,
+			Text: "Пропустить",
+		})
+
 	case strings.HasPrefix(data, CallbackDeleteCategory):
 		catID, _ := strconv.Atoi(data[len(CallbackDeleteCategory):])
 		b.handleDeleteCategory(chatID, catID, q.Message.MessageID, svc)
@@ -449,6 +494,43 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	default:
 		b.bot.Send(tgbotapi.NewCallback(q.ID, ""))
 	}
+}
+
+func (b *Bot) showSavingsStats(chatID int64, svc *service.FinanceService) {
+	savings, err := svc.GetSavings()
+	if err != nil {
+		b.sendError(chatID, err)
+		return
+	}
+
+	var totalSaved, totalGoal float64
+	var msgText strings.Builder
+	msgText.WriteString("📊 *Статистика копилок*\n\n")
+
+	for _, s := range savings {
+		if s.Goal != nil {
+			totalSaved += s.Amount
+			totalGoal += *s.Goal
+			progress := b.renderProgressBar(s.Progress(), 10)
+
+			msgText.WriteString(fmt.Sprintf(
+				"🔹 *%s*\n"+
+					"┣ Накоплено: *%.2f ₽*\n"+
+					"┣ Цель: *%.2f ₽*\n"+
+					"┗ Прогресс: %s\n\n",
+				s.Name, s.Amount, *s.Goal, progress,
+			))
+		}
+	}
+
+	msg := tgbotapi.NewMessage(chatID, msgText.String())
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад к копилкам", "show_savings"),
+		),
+	)
+	b.send(chatID, msg)
 }
 
 func (b *Bot) handleToggleNotifications(chatID int64, enable bool, user *tgbotapi.User) {
@@ -635,8 +717,12 @@ func (b *Bot) handleAmount(m *tgbotapi.Message) {
 	s.TempAmount = a
 	userStates[m.From.ID] = s
 
-	msg := tgbotapi.NewMessage(m.Chat.ID, "📝 Добавьте комментарий (или выберите «Пропустить»):")
-	msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("Пропустить")))
+	msg := tgbotapi.NewMessage(m.Chat.ID, "📝 Добавьте комментарий:")
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Пропустить", "skip_comment"),
+		),
+	)
 	b.send(m.Chat.ID, msg)
 }
 
@@ -644,7 +730,13 @@ func (b *Bot) handleComment(m *tgbotapi.Message, svc *service.FinanceService) {
 	s := userStates[m.From.ID]
 	if m.Text != "Пропустить" {
 		s.TempComment = m.Text
+	} else {
+		s.TempComment = ""
 	}
+
+	editMsg := tgbotapi.NewEditMessageReplyMarkup(m.Chat.ID, m.MessageID, tgbotapi.InlineKeyboardMarkup{})
+	b.bot.Send(editMsg)
+
 	c, err := svc.GetCategoryByID(s.TempCategoryID)
 	if err != nil {
 		b.sendError(m.Chat.ID, err)
@@ -718,12 +810,12 @@ func (b *Bot) showReport(chatID int64, svc *service.FinanceService) {
 
 	var incomeDetailsStr strings.Builder
 	for name, amount := range incomeDetails {
-		incomeDetailsStr.WriteString(fmt.Sprintf("┣ 💰 %s: %s\n", name, format(amount)))
+		incomeDetailsStr.WriteString(fmt.Sprintf("┣  %s: %s\n", name, format(amount)))
 	}
 
 	var expenseDetailsStr strings.Builder
 	for name, amount := range expenseDetails {
-		expenseDetailsStr.WriteString(fmt.Sprintf("┣ 📉 %s: %s\n", name, format(amount)))
+		expenseDetailsStr.WriteString(fmt.Sprintf("┣  %s: %s\n", name, format(amount)))
 	}
 
 	balance := totalIncome - totalExpense
@@ -747,6 +839,28 @@ func (b *Bot) showReport(chatID int64, svc *service.FinanceService) {
 	b.send(chatID, msg)
 }
 
+func (b *Bot) renderProgressBar(percent float64, width int) string {
+	displayPercent := math.Min(percent, 100)
+	filled := int(math.Round(displayPercent / 100 * float64(width)))
+	remaining := width - filled
+
+	excess := ""
+	if percent > 100 {
+		excessCount := int(math.Round((percent - 100) / 100 * float64(width)))
+		excess = strings.Repeat("🔴", excessCount)
+		remaining -= excessCount
+	}
+
+	progressBar := strings.Repeat("🟩", filled) +
+		strings.Repeat("⬜", remaining)
+
+	if excess != "" {
+		progressBar += " " + excess
+	}
+
+	return fmt.Sprintf("%s %.1f%%", progressBar, percent)
+}
+
 func (b *Bot) SendReminder(chatID int64) {
 	msg := tgbotapi.NewMessage(chatID, `🔔 <b>Напоминание</b>
 
@@ -761,34 +875,45 @@ func (b *Bot) SendReminder(chatID int64) {
 }
 
 func (b *Bot) showSavings(chatID int64, svc *service.FinanceService) {
-	s, err := svc.GetSavings()
+	savings, err := svc.GetSavings()
 	if err != nil {
-		b.send(chatID, tgbotapi.NewMessage(chatID, "⚠️ Ошибка при получении накоплений"))
+		b.sendError(chatID, err)
 		return
 	}
 
-	text := "💵 <b>Ваши копилки:</b>\n\n"
-	if len(s) == 0 {
-		text += "😔 Пока нет копилок\n"
+	var msgText strings.Builder
+	msgText.WriteString("💵 *Ваши копилки*\n\n")
+
+	if len(savings) == 0 {
+		msgText.WriteString("У вас пока нет копилок. Создайте первую!")
 	} else {
-		for _, sv := range s {
-			goalText := ""
-			if sv.Goal != nil {
-				goalText = fmt.Sprintf(", цель: %.2f ₽", *sv.Goal)
+		for _, s := range savings {
+			progress := ""
+			if s.Goal != nil {
+				progress = b.renderProgressBar(s.Progress(), 10)
 			}
-			text += fmt.Sprintf("💰 %s: %.2f ₽%s\n", sv.Name, sv.Amount, goalText)
+
+			msgText.WriteString(fmt.Sprintf(
+				"🔹 *%s*\n"+
+					"┣ Накоплено: *%.2f ₽*\n",
+				s.Name, s.Amount,
+			))
+
+			if s.Goal != nil {
+				msgText.WriteString(fmt.Sprintf(
+					"┣ Цель: *%.2f ₽*\n"+
+						"┗ Прогресс: %s\n\n",
+					*s.Goal, progress,
+				))
+			} else {
+				msgText.WriteString("\n")
+			}
 		}
 	}
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("➕ Новая копилка", "create_saving"),
-		),
-	)
-
-	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ReplyMarkup = keyboard
-	msg.ParseMode = "HTML"
+	msg := tgbotapi.NewMessage(chatID, msgText.String())
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = b.createSavingsKeyboard()
 	b.send(chatID, msg)
 }
 
@@ -804,10 +929,10 @@ func (b *Bot) handleCreateSavingName(m *tgbotapi.Message) {
 	s.Step = "create_saving_goal"
 	userStates[m.From.ID] = s
 
-	msg := tgbotapi.NewMessage(m.Chat.ID, "🎯 Введите цель копилки (число) или выберите «Пропустить»:")
-	msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("Пропустить"),
+	msg := tgbotapi.NewMessage(m.Chat.ID, "🎯 Введите цель копилки (число):")
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Пропустить", "skip_saving_goal"),
 		),
 	)
 	b.send(m.Chat.ID, msg)
@@ -861,7 +986,6 @@ func (b *Bot) sendMainMenu(chatID int64, text string) {
 	menu := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("➕ Добавить операцию"),
-			tgbotapi.NewKeyboardButton("💰 Пополнить копилку"),
 		),
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("📊 Статистика"),

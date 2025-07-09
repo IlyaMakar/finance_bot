@@ -401,6 +401,13 @@ func (r *SQLiteRepository) CreateSaving(userID int, name string, goal *float64) 
 	return err
 }
 
+func (s *Saving) Progress() float64 {
+	if s.Goal == nil || *s.Goal == 0 {
+		return 0
+	}
+	return (s.Amount / *s.Goal) * 100
+}
+
 func (r *SQLiteRepository) ClearUserData(userID int) error {
 	_, err := r.db.Exec("DELETE FROM transactions WHERE user_id = ?", userID)
 	if err != nil {
