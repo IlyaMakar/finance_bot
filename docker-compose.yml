@@ -1,0 +1,12 @@
+services:
+  bot:
+    build: .
+    container_name: finance_bot
+    restart: unless-stopped
+    volumes:
+       - ./finance.db:/app/finance.db
+    env_file:
+      - .env
+
+volumes:
+  finance_db:

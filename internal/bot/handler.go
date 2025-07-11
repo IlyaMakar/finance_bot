@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/IlyaMakar/finance_bot/internal/logger"
 	"github.com/IlyaMakar/finance_bot/internal/repository"
 	"github.com/IlyaMakar/finance_bot/internal/service"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -184,6 +185,9 @@ func (b *Bot) Start() {
 }
 
 func (b *Bot) handleMessage(m *tgbotapi.Message) {
+	userID := m.From.ID
+	logger.LogCommand(userID, fmt.Sprintf("Получено сообщение: %s", m.Text))
+
 	user, err := b.repo.GetOrCreateUser(
 		m.From.ID,
 		m.From.UserName,
@@ -191,6 +195,7 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 		m.From.LastName,
 	)
 	if err != nil {
+		logger.LogError(userID, fmt.Sprintf("Ошибка получения пользователя: %v", err))
 		b.sendError(m.Chat.ID, err)
 		return
 	}
@@ -199,6 +204,7 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 
 	switch m.Text {
 	case "/start":
+		logger.LogCommand(userID, "Команда /start")
 		b.initBasicCategories(user)
 		welcomeMsg := `👋 <b>Привет! Я ваш финансовый помошник!</b>
 
@@ -221,18 +227,23 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 		b.send(m.Chat.ID, msg)
 
 	case "➕ Добавить операцию":
+		logger.LogCommand(userID, "Кнопка: Добавить операцию")
 		b.startAddTransaction(m.Chat.ID)
 
 	case "📊 Статистика":
+		logger.LogCommand(userID, "Кнопка: Статистика")
 		b.showReport(m.Chat.ID, svc)
 
-	case "💵 Накопления":
-		b.showSavings(m.Chat.ID, svc)
-
 	case "⚙️ Настройки":
+		logger.LogCommand(userID, "Кнопка: Настройки")
 		b.showSettingsMenu(m.Chat.ID)
 
+	case "💵 Накопления":
+		logger.LogCommand(userID, "Кнопка: Накопления")
+		b.showSavings(m.Chat.ID, svc)
+
 	default:
+		logger.LogCommand(userID, fmt.Sprintf("Текст сообщения: %s", m.Text))
 		b.handleUserInput(m, svc)
 	}
 }
@@ -351,36 +362,47 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		q.From.LastName,
 	)
 	if err != nil {
+		logger.LogError(chatID, fmt.Sprintf("Ошибка получения пользователя: %v", err))
 		b.sendError(chatID, err)
 		return
 	}
 
 	svc := service.NewService(b.repo, user)
 
+	logger.LogButtonClick(chatID, data)
+
 	switch {
 	case data == "cancel":
 		b.sendMainMenu(chatID, "🚫 Действие отменено. Что дальше?")
+
 	case data == "saving_tips":
 		b.showSavingTips(chatID)
+
 	case data == "start_transaction":
 		b.startAddTransaction(chatID)
+
 	case data == "manage_categories":
 		b.showCategoryManagement(chatID, svc)
+
 	case data == "settings_back":
 		b.showSettingsMenu(chatID)
+
 	case strings.HasPrefix(data, CallbackEditCategory):
 		catID, _ := strconv.Atoi(data[len(CallbackEditCategory):])
 		b.showCategoryActions(chatID, catID, svc)
+
 	case data == "add_to_saving":
 		b.startAddToSaving(chatID, svc)
+
 	case data == "savings_stats":
 		b.showSavingsStats(chatID, svc)
-	case data == "savings_stats":
-		b.showSavingsStats(chatID, svc)
+
 	case data == "show_savings":
 		b.showSavings(chatID, svc)
+
 	case data == "main_menu":
 		b.sendMainMenu(chatID, "Главное меню")
+
 	case strings.HasPrefix(data, CallbackRenameCategory):
 		catID, _ := strconv.Atoi(data[len(CallbackRenameCategory):])
 		state := userStates[chatID]
@@ -388,6 +410,7 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		state.TempCategoryID = catID
 		userStates[chatID] = state
 		b.send(chatID, tgbotapi.NewMessage(chatID, "✏️ Введите новое название категории:"))
+
 	case data == "skip_comment":
 		editMsg := tgbotapi.NewEditMessageReplyMarkup(chatID, q.Message.MessageID, tgbotapi.InlineKeyboardMarkup{})
 		b.bot.Send(editMsg)
@@ -415,8 +438,10 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	case strings.HasPrefix(data, CallbackDeleteCategory):
 		catID, _ := strconv.Atoi(data[len(CallbackDeleteCategory):])
 		b.handleDeleteCategory(chatID, catID, q.Message.MessageID, svc)
+
 	case data == "type_income" || data == "type_expense":
 		b.handleTypeSelect(chatID, q.Message.MessageID, data, svc)
+
 	case strings.HasPrefix(data, "add_to_saving_"):
 		parts := strings.Split(data, "_")
 		if len(parts) < 4 {
@@ -445,6 +470,7 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		b.bot.Send(edit)
 
 		b.send(chatID, tgbotapi.NewMessage(chatID, fmt.Sprintf("💵 Вы выбрали копилку: %s\nВведите сумму для пополнения:", saving.Name)))
+
 	case strings.HasPrefix(data, "cat_"):
 		catID, err := strconv.Atoi(data[4:])
 		if err != nil {
@@ -452,22 +478,28 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 			return
 		}
 		b.handleCatSelect(int(chatID), catID)
+
 	case data == "notification_settings":
 		b.showNotificationSettings(chatID)
+
 	case data == "enable_notifications":
 		b.handleToggleNotifications(chatID, true, q.From)
+
 	case data == "disable_notifications":
 		b.handleToggleNotifications(chatID, false, q.From)
+
 	case data == "other_cat":
 		state := userStates[chatID]
 		state.Step = "new_cat"
 		userStates[chatID] = state
 		b.send(chatID, tgbotapi.NewMessage(chatID, "📝 Введите название новой категории:"))
+
 	case data == "create_saving":
 		state := userStates[chatID]
 		state.Step = "create_saving_name"
 		userStates[chatID] = state
 		b.send(chatID, tgbotapi.NewMessage(chatID, "💸 Введите название копилки:"))
+
 	case data == "confirm_clear_data":
 		msg := tgbotapi.NewMessage(chatID, "⚠️ <b>Внимание!</b>\n\nВы действительно хотите удалить ВСЕ свои данные? Это действие нельзя отменить!\n\nВсе транзакции, категории и копилки будут удалены.")
 		msg.ParseMode = "HTML"
@@ -482,15 +514,16 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	case data == "clear_data":
 		err := svc.ClearUserData()
 		if err != nil {
+			logger.LogError(chatID, fmt.Sprintf("Ошибка очистки данных: %v", err))
 			b.sendError(chatID, err)
 			return
 		}
 
-		// Создаем базовые категории заново
 		b.initBasicCategories(user)
 
 		b.send(chatID, tgbotapi.NewMessage(chatID, "🧹 Все данные успешно удалены! Бот сброшен к начальному состоянию."))
 		b.sendMainMenu(chatID, "🔄 Вы можете начать заново!")
+
 	default:
 		b.bot.Send(tgbotapi.NewCallback(q.ID, ""))
 	}
