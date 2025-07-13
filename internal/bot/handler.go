@@ -185,8 +185,7 @@ func (b *Bot) Start() {
 }
 
 func (b *Bot) handleMessage(m *tgbotapi.Message) {
-	userID := m.From.ID
-	logger.LogCommand(userID, fmt.Sprintf("Получено сообщение: %s", m.Text))
+	logger.LogCommand(m.From.UserName, fmt.Sprintf("Получено сообщение: %s", m.Text))
 
 	user, err := b.repo.GetOrCreateUser(
 		m.From.ID,
@@ -195,7 +194,7 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 		m.From.LastName,
 	)
 	if err != nil {
-		logger.LogError(userID, fmt.Sprintf("Ошибка получения пользователя: %v", err))
+		logger.LogError(m.From.UserName, fmt.Sprintf("Ошибка получения пользователя: %v", err))
 		b.sendError(m.Chat.ID, err)
 		return
 	}
@@ -204,7 +203,7 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 
 	switch m.Text {
 	case "/start":
-		logger.LogCommand(userID, "Команда /start")
+		logger.LogCommand(m.From.UserName, "Команда /start")
 		b.initBasicCategories(user)
 		welcomeMsg := `👋 <b>Привет! Я ваш финансовый помошник!</b>
 
@@ -227,23 +226,23 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 		b.send(m.Chat.ID, msg)
 
 	case "➕ Добавить операцию":
-		logger.LogCommand(userID, "Кнопка: Добавить операцию")
+		logger.LogCommand(m.From.UserName, "Кнопка: Добавить операцию")
 		b.startAddTransaction(m.Chat.ID)
 
 	case "📊 Статистика":
-		logger.LogCommand(userID, "Кнопка: Статистика")
+		logger.LogCommand(m.From.UserName, "Кнопка: Статистика")
 		b.showReport(m.Chat.ID, svc)
 
 	case "⚙️ Настройки":
-		logger.LogCommand(userID, "Кнопка: Настройки")
+		logger.LogCommand(m.From.UserName, "Кнопка: Настройки")
 		b.showSettingsMenu(m.Chat.ID)
 
 	case "💵 Накопления":
-		logger.LogCommand(userID, "Кнопка: Накопления")
+		logger.LogCommand(m.From.UserName, "Кнопка: Накопления")
 		b.showSavings(m.Chat.ID, svc)
 
 	default:
-		logger.LogCommand(userID, fmt.Sprintf("Текст сообщения: %s", m.Text))
+		logger.LogCommand(m.From.UserName, fmt.Sprintf("Текст сообщения: %s", m.Text))
 		b.handleUserInput(m, svc)
 	}
 }
@@ -362,14 +361,14 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		q.From.LastName,
 	)
 	if err != nil {
-		logger.LogError(chatID, fmt.Sprintf("Ошибка получения пользователя: %v", err))
+		logger.LogError(q.From.UserName, fmt.Sprintf("Ошибка: %v", err))
 		b.sendError(chatID, err)
 		return
 	}
 
 	svc := service.NewService(b.repo, user)
 
-	logger.LogButtonClick(chatID, data)
+	logger.LogButtonClick(q.From.UserName, data)
 
 	switch {
 	case data == "cancel":
@@ -514,7 +513,7 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	case data == "clear_data":
 		err := svc.ClearUserData()
 		if err != nil {
-			logger.LogError(chatID, fmt.Sprintf("Ошибка очистки данных: %v", err))
+			logger.LogError(fmt.Sprintf("user_%d", chatID), fmt.Sprintf("Ошибка очистки данных: %v", err))
 			b.sendError(chatID, err)
 			return
 		}
