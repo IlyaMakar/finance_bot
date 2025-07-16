@@ -118,3 +118,19 @@ func (s *FinanceService) GetNotificationsEnabled() (bool, error) {
 func (s *FinanceService) ClearUserData() error {
 	return s.repo.ClearUserData(s.userID)
 }
+
+func (s *FinanceService) GetTransactionByID(id int) (*repository.Transaction, error) {
+	return s.repo.GetTransactionByID(s.userID, id)
+}
+
+func (s *FinanceService) UpdateTransactionAmount(id int, amount float64) error {
+	return s.repo.UpdateTransactionAmount(s.userID, id, amount)
+}
+
+func (s *FinanceService) UpdateTransactionComment(id int, comment string) error {
+	return s.repo.UpdateTransactionComment(s.userID, id, comment)
+}
+
+func (s *FinanceService) DeleteTransaction(id int) error {
+	return s.repo.DeleteTransaction(s.userID, id)
+}
