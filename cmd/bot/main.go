@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/IlyaMakar/finance_bot/internal/bot"
+	"github.com/IlyaMakar/finance_bot/internal/bot/handlers"
 	"github.com/IlyaMakar/finance_bot/internal/logger"
 	"github.com/IlyaMakar/finance_bot/internal/repository"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -53,7 +53,7 @@ func main() {
 
 	repo := repository.NewRepository(db)
 
-	botInstance, err := bot.NewBot(token, repo)
+	botInstance, err := handlers.NewBot(token, repo)
 	if err != nil {
 		logger.LogError("system", fmt.Sprintf("Failed to create bot: %v", err))
 		log.Fatalf("не удалось создать бота: %v", err)
@@ -70,13 +70,18 @@ func main() {
 	log.Println("Завершение работы...")
 }
 
-func startReminder(botInstance *bot.Bot, repo *repository.SQLiteRepository, testMode bool) {
+func startReminder(botInstance *handlers.Bot, repo *repository.SQLiteRepository, testMode bool) {
 	checkInterval := time.Minute
 	reminderHour := -1
 
 	if !testMode {
 		checkInterval = time.Hour
-		reminderHour = 20
+		reminderHour = 16
+	}
+
+	loc, err := time.LoadLocation("Europe/Moscow")
+	if err != nil {
+		log.Fatalf("Не удалось загрузить временную зону Europe/Moscow: %v", err)
 	}
 
 	time.Sleep(10 * time.Second)
@@ -86,7 +91,9 @@ func startReminder(botInstance *bot.Bot, repo *repository.SQLiteRepository, test
 	defer ticker.Stop()
 
 	for now := range ticker.C {
-		if reminderHour >= 0 && now.Hour() != reminderHour {
+		localTime := now.In(loc)
+
+		if reminderHour >= 0 && localTime.Hour() != reminderHour {
 			continue
 		}
 
@@ -122,7 +129,7 @@ func startReminder(botInstance *bot.Bot, repo *repository.SQLiteRepository, test
 	}
 }
 
-func sendTestReminder(botInstance *bot.Bot, repo *repository.SQLiteRepository, testMode bool) {
+func sendTestReminder(botInstance *handlers.Bot, repo *repository.SQLiteRepository, testMode bool) {
 	if !testMode {
 		return
 	}
@@ -140,19 +147,18 @@ func sendTestReminder(botInstance *bot.Bot, repo *repository.SQLiteRepository, t
 			user.TelegramID,
 			"🔔 <b>Тестовое напоминание</b>\n\n"+
 				"Это тестовая проверка системы напоминаний.\n"+
-				"Реальное напоминание приходит ежедневно в 20:00, если вы не добавили транзакции.",
+				"Реальное напоминание приходит ежедневно в 16:00, если вы не добавили транзакции.",
 		)
 		msg.ParseMode = "HTML"
 		botInstance.SendMessage(msg)
 	}
 }
 
-func sendReminderMessage(botInstance *bot.Bot, chatID int64, testMode bool) {
+func sendReminderMessage(botInstance *handlers.Bot, chatID int64, testMode bool) {
 	message := "💡 <b>Напоминание о транзакциях</b>\n\n" +
 		"Привет! Похоже, ты сегодня еще не добавлял(а) ни одной транзакции.\n\n" +
 		"Не забывай вести учет своих финансов — это поможет лучше контролировать бюджет!\n\n" +
-		"➕ Нажми \"Добавить операцию\" или просто напиши сумму с комментарием, например:\n" +
-		"<code>150 </code>"
+		"➕ Нажми \"Добавить операцию\" "
 
 	if testMode {
 		message = "🔔 <b>ТЕСТ: Напоминание о транзакциях</b>\n\n" +

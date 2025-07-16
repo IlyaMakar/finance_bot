@@ -431,3 +431,45 @@ func (r *SQLiteRepository) ClearUserData(userID int) error {
 
 	return nil
 }
+
+func (r *SQLiteRepository) GetTransactionByID(userID, id int) (*Transaction, error) {
+	var t Transaction
+	var ds string
+
+	err := r.db.QueryRow(
+		"SELECT id, amount, category_id, date, comment FROM transactions WHERE id = ? AND user_id = ?",
+		id, userID,
+	).Scan(&t.ID, &t.Amount, &t.CategoryID, &ds, &t.Comment)
+
+	if err != nil {
+		return nil, err
+	}
+
+	t.Date, _ = time.Parse(time.RFC3339, ds)
+	t.UserID = userID
+	return &t, nil
+}
+
+func (r *SQLiteRepository) UpdateTransactionAmount(userID, id int, amount float64) error {
+	_, err := r.db.Exec(
+		"UPDATE transactions SET amount = ? WHERE id = ? AND user_id = ?",
+		amount, id, userID,
+	)
+	return err
+}
+
+func (r *SQLiteRepository) UpdateTransactionComment(userID, id int, comment string) error {
+	_, err := r.db.Exec(
+		"UPDATE transactions SET comment = ? WHERE id = ? AND user_id = ?",
+		comment, id, userID,
+	)
+	return err
+}
+
+func (r *SQLiteRepository) DeleteTransaction(userID, id int) error {
+	_, err := r.db.Exec(
+		"DELETE FROM transactions WHERE id = ? AND user_id = ?",
+		id, userID,
+	)
+	return err
+}
