@@ -227,3 +227,22 @@ INFO 2025/07/16 12:57:29 logger.go:38: CMD @LONEl1st: Получено сооб�
 INFO 2025/07/16 12:57:29 logger.go:38: CMD @LONEl1st: Кнопка: Добавить операцию
 INFO 2025/07/16 12:57:30 logger.go:49: BTN @LONEl1st: show_history
 INFO 2025/07/16 12:57:46 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/07/21 13:19:40 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/07/21 13:19:44 logger.go:38: CMD @LONEl1st: Получено сообщение: 📊 Статистика
+INFO 2025/07/21 13:19:44 logger.go:38: CMD @LONEl1st: Кнопка: Статистика
+INFO 2025/07/21 13:19:46 logger.go:38: CMD @LONEl1st: Получено сообщение: 💵 Накопления
+INFO 2025/07/21 13:19:46 logger.go:38: CMD @LONEl1st: Кнопка: Накопления
+INFO 2025/07/21 13:19:48 logger.go:49: BTN @LONEl1st: manage_savings
+INFO 2025/07/21 13:19:50 logger.go:49: BTN @LONEl1st: edit_saving_7
+INFO 2025/07/21 13:19:56 logger.go:49: BTN @LONEl1st: clear_saving_7
+INFO 2025/07/21 13:19:58 logger.go:49: BTN @LONEl1st: manage_savings
+INFO 2025/07/21 13:20:00 logger.go:49: BTN @LONEl1st: edit_saving_6
+INFO 2025/07/21 13:20:03 logger.go:49: BTN @LONEl1st: clear_saving_6
+INFO 2025/07/21 13:20:07 logger.go:38: CMD @LONEl1st: Получено сообщение: 💵 Накопления
+INFO 2025/07/21 13:20:07 logger.go:38: CMD @LONEl1st: Кнопка: Накопления
+INFO 2025/07/21 13:21:15 logger.go:49: BTN @LONEl1st: manage_savings
+INFO 2025/07/21 13:21:18 logger.go:49: BTN @LONEl1st: edit_saving_7
+INFO 2025/07/21 13:21:19 logger.go:49: BTN @LONEl1st: delete_saving_7
+INFO 2025/07/21 13:21:21 logger.go:49: BTN @LONEl1st: manage_savings
+INFO 2025/07/21 13:21:22 logger.go:49: BTN @LONEl1st: show_savings
+INFO 2025/07/21 13:23:07 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...

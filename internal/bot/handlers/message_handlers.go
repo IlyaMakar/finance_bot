@@ -96,6 +96,8 @@ func (b *Bot) handleUserInput(m *tgbotapi.Message, svc *service.FinanceService) 
 		b.handleCreateSavingName(m)
 	case "create_saving_goal":
 		b.handleCreateSavingGoal(m)
+	case "rename_saving":
+		b.handleRenameSaving(m, svc)
 	case "edit_transaction_amount":
 		amount, err := strconv.ParseFloat(m.Text, 64)
 		if err != nil || amount <= 0 {
@@ -190,6 +192,25 @@ func (b *Bot) handleEditTransaction(chatID int64, transactionID int, svc *servic
 		),
 	)
 	b.send(chatID, msg)
+}
+func (b *Bot) handleRenameSaving(m *tgbotapi.Message, svc *service.FinanceService) {
+	state := userStates[m.From.ID]
+	newName := strings.TrimSpace(m.Text)
+
+	if newName == "" {
+		b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "⚠️ Название не может быть пустым. Попробуйте снова:"))
+		return
+	}
+
+	err := svc.RenameSaving(state.TempCategoryID, newName)
+	if err != nil {
+		b.sendError(m.Chat.ID, err)
+		return
+	}
+
+	delete(userStates, m.From.ID)
+	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "✅ Копилка переименована!"))
+	b.showSavingsManagement(m.Chat.ID, svc)
 }
 
 func (b *Bot) handleRenameCategory(m *tgbotapi.Message, svc *service.FinanceService) {

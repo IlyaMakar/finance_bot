@@ -15,6 +15,11 @@ const (
 	CallbackDeleteCategory      = "delete_cat_"
 	CallbackEditCategory        = "edit_cat_"
 	CallbackToggleNotifications = "toggle_notifs_"
+	CallbackEditSaving          = "edit_saving_"
+	CallbackDeleteSaving        = "delete_saving_"
+	CallbackRenameSaving        = "rename_saving_"
+	CallbackClearSaving         = "clear_saving_"
+	CallbackManageSavings       = "manage_savings"
 )
 
 type Bot struct {

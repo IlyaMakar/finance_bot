@@ -473,3 +473,19 @@ func (r *SQLiteRepository) DeleteTransaction(userID, id int) error {
 	)
 	return err
 }
+
+func (r *SQLiteRepository) DeleteSaving(userID, id int) error {
+	_, err := r.db.Exec(
+		"DELETE FROM savings WHERE id = ? AND user_id = ?",
+		id, userID,
+	)
+	return err
+}
+
+func (r *SQLiteRepository) RenameSaving(userID, id int, newName string) error {
+	_, err := r.db.Exec(
+		"UPDATE savings SET name = ? WHERE id = ? AND user_id = ?",
+		newName, id, userID,
+	)
+	return err
+}
