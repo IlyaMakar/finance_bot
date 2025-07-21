@@ -31,7 +31,38 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	svc := service.NewService(b.repo, user)
 
 	logger.LogButtonClick(q.From.UserName, data)
+	if data == CallbackManageSavings {
+		b.showSavingsManagement(q.From.ID, svc)
+		return
+	}
 
+	if strings.HasPrefix(data, CallbackEditSaving) {
+		savingID, _ := strconv.Atoi(data[len(CallbackEditSaving):])
+		b.showSavingActions(q.From.ID, savingID, q.Message.MessageID, svc)
+		return
+	}
+
+	if strings.HasPrefix(data, CallbackDeleteSaving) {
+		savingID, _ := strconv.Atoi(data[len(CallbackDeleteSaving):])
+		b.handleDeleteSaving(q.From.ID, savingID, q.Message.MessageID, svc)
+		return
+	}
+
+	if strings.HasPrefix(data, CallbackRenameSaving) {
+		savingID, _ := strconv.Atoi(data[len(CallbackRenameSaving):])
+		state := userStates[q.From.ID]
+		state.Step = "rename_saving"
+		state.TempCategoryID = savingID
+		userStates[q.From.ID] = state
+		b.send(q.From.ID, tgbotapi.NewMessage(q.From.ID, "✏️ Введите новое название копилки:"))
+		return
+	}
+
+	if strings.HasPrefix(data, CallbackClearSaving) {
+		savingID, _ := strconv.Atoi(data[len(CallbackClearSaving):])
+		b.handleClearSaving(q.From.ID, savingID, q.Message.MessageID, svc)
+		return
+	}
 	if strings.HasPrefix(data, CallbackEditCategory) {
 		catID, _ := strconv.Atoi(data[len(CallbackEditCategory):])
 		b.showCategoryActions(chatID, catID, svc)

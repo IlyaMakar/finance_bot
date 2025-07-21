@@ -134,3 +134,20 @@ func (s *FinanceService) UpdateTransactionComment(id int, comment string) error 
 func (s *FinanceService) DeleteTransaction(id int) error {
 	return s.repo.DeleteTransaction(s.userID, id)
 }
+
+func (s *FinanceService) DeleteSaving(id int) error {
+	if id <= 0 {
+		return fmt.Errorf("неверный ID копилки")
+	}
+	return s.repo.DeleteSaving(s.userID, id)
+}
+
+func (s *FinanceService) RenameSaving(id int, newName string) error {
+	if id <= 0 {
+		return fmt.Errorf("неверный ID копилки")
+	}
+	if newName == "" {
+		return fmt.Errorf("название не может быть пустым")
+	}
+	return s.repo.RenameSaving(s.userID, id, newName)
+}

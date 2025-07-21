@@ -60,9 +60,111 @@ func (b *Bot) createSavingsKeyboard() tgbotapi.InlineKeyboardMarkup {
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("📊 Статистика", "savings_stats"),
+			tgbotapi.NewInlineKeyboardButtonData("✏️ Редактировать", "manage_savings"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "main_menu"),
 		),
 	)
+}
+
+func (b *Bot) showSavingsManagement(chatID int64, svc *service.FinanceService) {
+	savings, err := svc.GetSavings()
+	if err != nil {
+		b.sendError(chatID, err)
+		return
+	}
+
+	if len(savings) == 0 {
+		b.send(chatID, tgbotapi.NewMessage(chatID, "😔 У вас пока нет копилок для редактирования."))
+		return
+	}
+
+	var rows [][]tgbotapi.InlineKeyboardButton
+	for _, s := range savings {
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(s.Name, CallbackEditSaving+strconv.Itoa(s.ID)),
+		))
+	}
+
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "show_savings"),
+	))
+
+	msg := tgbotapi.NewMessage(chatID, "✏️ <b>Редактирование копилок</b>\n\nВыберите копилку:")
+	msg.ParseMode = "HTML"
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
+	b.send(chatID, msg)
+}
+
+func (b *Bot) showSavingActions(chatID int64, savingID int, messageID int, svc *service.FinanceService) {
+	saving, err := svc.GetSavingByID(savingID)
+	if err != nil {
+		b.sendError(chatID, err)
+		return
+	}
+
+	msgText := fmt.Sprintf("✏️ <b>Копилка:</b> %s\n<b>Текущая сумма:</b> %.2f ₽", saving.Name, saving.Amount)
+	if saving.Goal != nil {
+		msgText += fmt.Sprintf("\n<b>Цель:</b> %.2f ₽", *saving.Goal)
+	}
+	msgText += "\n\nВыберите действие:"
+
+	msg := tgbotapi.NewMessage(chatID, msgText)
+	msg.ParseMode = "HTML"
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("✏️ Переименовать", CallbackRenameSaving+strconv.Itoa(savingID)),
+			tgbotapi.NewInlineKeyboardButtonData("🧹 Очистить", CallbackClearSaving+strconv.Itoa(savingID)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🗑️ Удалить", CallbackDeleteSaving+strconv.Itoa(savingID)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "manage_savings"),
+		),
+	)
+	b.send(chatID, msg)
+}
+
+func (b *Bot) handleDeleteSaving(chatID int64, savingID int, messageID int, svc *service.FinanceService) {
+	err := svc.DeleteSaving(savingID)
+	if err != nil {
+		b.sendError(chatID, err)
+		return
+	}
+
+	edit := tgbotapi.NewEditMessageTextAndMarkup(
+		chatID,
+		messageID,
+		"✅ Копилка удалена!",
+		tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("◀️ К списку копилок", "manage_savings"),
+			),
+		),
+	)
+	b.send(chatID, edit)
+}
+
+func (b *Bot) handleClearSaving(chatID int64, savingID int, messageID int, svc *service.FinanceService) {
+	err := svc.UpdateSavingAmount(savingID, 0)
+	if err != nil {
+		b.sendError(chatID, err)
+		return
+	}
+
+	edit := tgbotapi.NewEditMessageTextAndMarkup(
+		chatID,
+		messageID,
+		"✅ Копилка очищена!",
+		tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("◀️ К списку копилок", "manage_savings"),
+			),
+		),
+	)
+	b.send(chatID, edit)
 }
 
 func (b *Bot) initBasicCategories(user *repository.User) {
