@@ -28,11 +28,12 @@ type Bot struct {
 }
 
 type UserState struct {
-	Step           string
-	TempCategoryID int
-	TempAmount     float64
-	TempComment    string
-	TempType       string
+	Step             string
+	TempCategoryID   int
+	TempAmount       float64
+	TempCategoryName string
+	TempComment      string
+	TempType         string
 }
 
 var userStates = make(map[int64]UserState)
@@ -44,6 +45,10 @@ func NewBot(token string, repo *repository.SQLiteRepository) (*Bot, error) {
 	}
 
 	return &Bot{bot: botAPI, repo: repo}, nil
+}
+
+func (b *Bot) GetRepo() *repository.SQLiteRepository {
+	return b.repo
 }
 
 func (b *Bot) send(chatID int64, c tgbotapi.Chattable) {

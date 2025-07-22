@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,13 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		logger.LogError(q.From.UserName, fmt.Sprintf("Ошибка: %v", err))
 		b.sendError(chatID, err)
 		return
+	}
+	if err := b.repo.UpdateUserActivity(user.ID, time.Now()); err != nil {
+		logger.LogError(q.From.UserName, fmt.Sprintf("Ошибка обновления активности: %v", err))
+	}
+
+	if err := b.repo.RecordButtonClick(int(chatID), data); err != nil {
+		logger.LogError(q.From.UserName, fmt.Sprintf("Ошибка записи клика: %v", err))
 	}
 
 	svc := service.NewService(b.repo, user)
@@ -163,6 +171,8 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 
 	case "main_menu":
 		b.sendMainMenu(chatID, "Главное меню")
+	case "support":
+		b.showSupportInfo(chatID)
 
 	case "skip_comment":
 		editMsg := tgbotapi.NewEditMessageReplyMarkup(chatID, q.Message.MessageID, tgbotapi.InlineKeyboardMarkup{})
@@ -307,10 +317,31 @@ func (b *Bot) handleTypeSelect(chatID int64, msgID int, data string, svc *servic
 }
 
 func (b *Bot) handleCatSelect(chatID int, catID int) {
-	s := userStates[int64(chatID)]
-	s.Step = "enter_amount"
-	s.TempCategoryID = catID
-	userStates[int64(chatID)] = s
+	state, ok := userStates[int64(chatID)]
+	if !ok {
+		b.sendError(int64(chatID), fmt.Errorf("сессия не найдена"))
+		return
+	}
+
+	user, err := b.repo.GetOrCreateUser(int64(chatID), "", "", "")
+	if err != nil {
+		b.sendError(int64(chatID), err)
+		return
+	}
+
+	svc := service.NewService(b.repo, user)
+
+	category, err := svc.GetCategoryByID(catID)
+	if err != nil {
+		log.Printf("Ошибка получения категории: userID=%d, catID=%d, err=%v", user.ID, catID, err)
+		b.sendError(int64(chatID), fmt.Errorf("не удалось загрузить категорию"))
+		return
+	}
+
+	state.TempCategoryID = catID
+	state.TempType = category.Type
+	state.Step = "enter_amount"
+	userStates[int64(chatID)] = state
 
 	msg := tgbotapi.NewMessage(int64(chatID), "💸 Введите сумму (например, 1500):")
 	msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)

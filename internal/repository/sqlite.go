@@ -36,6 +36,7 @@ type Transaction struct {
 	Amount        float64
 	CategoryID    int
 	Date          time.Time
+	CategoryName  string
 	PaymentMethod string
 	Comment       string
 }
@@ -47,6 +48,12 @@ type Saving struct {
 	Amount  float64
 	Goal    *float64
 	Comment string
+}
+
+type GlobalCategory struct {
+	ID   int
+	Name string
+	Type string
 }
 
 func NewSQLiteDB(path string) (*sql.DB, error) {
@@ -63,47 +70,78 @@ func NewSQLiteDB(path string) (*sql.DB, error) {
 func InitDB(db *sql.DB) error {
 	schema := `
 CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        telegram_id INTEGER NOT NULL UNIQUE,
-        username TEXT,
-        first_name TEXT,
-        last_name TEXT,
-        created_at TEXT NOT NULL,
-        notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE
-    );
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id INTEGER NOT NULL UNIQUE,
+    username TEXT,
+    first_name TEXT,
+    last_name TEXT,
+    created_at TEXT NOT NULL,
+    notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS global_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('income', 'expense', 'saving')),
+    UNIQUE(name, type)
+);
+
+CREATE TABLE IF NOT EXISTS user_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    global_category_id INTEGER NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id),
+    FOREIGN KEY(global_category_id) REFERENCES global_categories(id),
+    UNIQUE(user_id, global_category_id)
+);
 
 CREATE TABLE IF NOT EXISTS categories (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	user_id INTEGER NOT NULL,
-	name TEXT NOT NULL,
-	type TEXT NOT NULL CHECK(type IN ('income','expense','saving')),
-	parent_id INTEGER,
-	FOREIGN KEY(parent_id) REFERENCES categories(id),
-	FOREIGN KEY(user_id) REFERENCES users(id),
-	UNIQUE(user_id, name)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('income','expense','saving')),
+    parent_id INTEGER,
+    FOREIGN KEY(parent_id) REFERENCES categories(id),
+    FOREIGN KEY(user_id) REFERENCES users(id),
+    UNIQUE(user_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	user_id INTEGER NOT NULL,
-	amount REAL NOT NULL,
-	category_id INTEGER NOT NULL,
-	date TEXT NOT NULL,
-	payment_method TEXT CHECK(payment_method IN ('cash','card')),
-	comment TEXT,
-	FOREIGN KEY(category_id) REFERENCES categories(id),
-	FOREIGN KEY(user_id) REFERENCES users(id)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    category_id INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    payment_method TEXT CHECK(payment_method IN ('cash','card')),
+    comment TEXT,
+    FOREIGN KEY(category_id) REFERENCES categories(id),
+    FOREIGN KEY(user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS savings (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	user_id INTEGER NOT NULL,
-	name TEXT NOT NULL,
-	amount REAL NOT NULL DEFAULT 0,
-	goal REAL,
-	comment TEXT,
-	FOREIGN KEY(user_id) REFERENCES users(id),
-	UNIQUE(user_id, name)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    amount REAL NOT NULL DEFAULT 0,
+    goal REAL,
+    comment TEXT,
+    FOREIGN KEY(user_id) REFERENCES users(id),
+    UNIQUE(user_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS user_activity (
+    user_id INTEGER PRIMARY KEY,
+    last_active TEXT,
+    join_date TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS button_clicks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    button_name TEXT,
+    click_time TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
@@ -111,9 +149,52 @@ CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id
 CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id);
 CREATE INDEX IF NOT EXISTS idx_savings_user ON savings(user_id);
+
+CREATE TABLE IF NOT EXISTS versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version TEXT NOT NULL,
+    release_date TEXT NOT NULL,
+    description TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_version_read (
+    user_id INTEGER NOT NULL,
+    version_id INTEGER NOT NULL,
+    read_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, version_id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (version_id) REFERENCES versions(id)
+);
 `
 	_, err := db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM global_categories").Scan(&count)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		initialCategories := []struct {
+			name string
+			typ  string
+		}{
+			{"🍎 Продукты", "expense"},
+			{"🚗 Транспорт", "expense"},
+			{"🏠 ЖКХ", "expense"},
+			{"💼 Зарплата", "income"},
+			{"🎉 Развлечения", "expense"},
+		}
+		for _, cat := range initialCategories {
+			_, err = db.Exec("INSERT INTO global_categories (name, type) VALUES (?, ?)", cat.name, cat.typ)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func NewRepository(db *sql.DB) *SQLiteRepository {
@@ -136,6 +217,7 @@ func (r *SQLiteRepository) GetUserNotificationsEnabled(userID int) (bool, error)
 	).Scan(&enabled)
 	return enabled, err
 }
+
 func (r *SQLiteRepository) HasTransactionsToday(userID int) (bool, error) {
 	now := time.Now()
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -179,6 +261,7 @@ func (r *SQLiteRepository) GetOrCreateUser(telegramID int64, username, firstName
 
 	if err == nil {
 		user.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		r.UpdateUserActivity(user.ID, time.Now())
 		return &user, nil
 	}
 
@@ -192,22 +275,101 @@ func (r *SQLiteRepository) GetOrCreateUser(telegramID int64, username, firstName
 		}
 
 		id, _ := res.LastInsertId()
-		return &User{
+		user = User{
 			ID:         int(id),
 			TelegramID: telegramID,
 			Username:   username,
 			FirstName:  firstName,
 			LastName:   lastName,
 			CreatedAt:  time.Now(),
-		}, nil
+		}
+		r.UpdateUserActivity(user.ID, time.Now())
+		return &user, nil
 	}
 
 	return nil, fmt.Errorf("get user: %w", err)
 }
 
+func (r *SQLiteRepository) UpdateUserActivity(userID int, activeTime time.Time) error {
+	var exists int
+	err := r.db.QueryRow("SELECT COUNT(*) FROM user_activity WHERE user_id = ?", userID).Scan(&exists)
+	if err != nil {
+		return err
+	}
+
+	if exists == 0 {
+		_, err = r.db.Exec(
+			"INSERT INTO user_activity (user_id, last_active, join_date) VALUES (?, ?, ?)",
+			userID, activeTime.Format(time.RFC3339), activeTime.Format(time.RFC3339),
+		)
+	} else {
+		_, err = r.db.Exec(
+			"UPDATE user_activity SET last_active = ? WHERE user_id = ?",
+			activeTime.Format(time.RFC3339), userID,
+		)
+	}
+	return err
+}
+
+func (r *SQLiteRepository) RecordButtonClick(userID int, buttonName string) error {
+	_, err := r.db.Exec(
+		"INSERT INTO button_clicks (user_id, button_name, click_time) VALUES (?, ?, ?)",
+		userID, buttonName, time.Now().Format(time.RFC3339),
+	)
+	return err
+}
+
+func (r *SQLiteRepository) GetActiveUsersCount(since time.Time, count *int) error {
+	query := "SELECT COUNT(*) FROM user_activity WHERE last_active >= ?"
+	return r.db.QueryRow(query, since.Format(time.RFC3339)).Scan(count)
+}
+
+func (r *SQLiteRepository) GetActiveUsersCountForPeriod(start, end time.Time, count *int) error {
+	query := "SELECT COUNT(*) FROM user_activity WHERE last_active >= ? AND last_active < ?"
+	return r.db.QueryRow(query, start.Format(time.RFC3339), end.Format(time.RFC3339)).Scan(count)
+}
+
+func (r *SQLiteRepository) GetButtonClicksCount(since time.Time, counts *map[string]int) error {
+	*counts = make(map[string]int)
+	rows, err := r.db.Query("SELECT button_name, COUNT(*) FROM button_clicks WHERE click_time >= ? GROUP BY button_name", since.Format(time.RFC3339))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var buttonName string
+		var count int
+		if err := rows.Scan(&buttonName, &count); err != nil {
+			return err
+		}
+		(*counts)[buttonName] = count
+	}
+	return rows.Err()
+}
+
+func (r *SQLiteRepository) GetButtonClicksCountForPeriod(start, end time.Time, counts *map[string]int) error {
+	*counts = make(map[string]int)
+	rows, err := r.db.Query("SELECT button_name, COUNT(*) FROM button_clicks WHERE click_time >= ? AND click_time < ? GROUP BY button_name", start.Format(time.RFC3339), end.Format(time.RFC3339))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var buttonName string
+		var count int
+		if err := rows.Scan(&buttonName, &count); err != nil {
+			return err
+		}
+		(*counts)[buttonName] = count
+	}
+	return rows.Err()
+}
+
 func (r *SQLiteRepository) GetCategories(userID int) ([]Category, error) {
 	rows, err := r.db.Query(
-		"SELECT id, name, type, parent_id FROM categories WHERE user_id = ? ORDER BY name",
+		"SELECT id, name, type, parent_id FROM categories WHERE user_id = ?",
 		userID,
 	)
 	if err != nil {
@@ -215,7 +377,7 @@ func (r *SQLiteRepository) GetCategories(userID int) ([]Category, error) {
 	}
 	defer rows.Close()
 
-	var cats []Category
+	var categories []Category
 	for rows.Next() {
 		var c Category
 		var pid *int
@@ -224,34 +386,80 @@ func (r *SQLiteRepository) GetCategories(userID int) ([]Category, error) {
 		}
 		c.ParentID = pid
 		c.UserID = userID
-		cats = append(cats, c)
+		categories = append(categories, c)
 	}
-	return cats, nil
+
+	if len(categories) == 0 {
+		basicCats := []struct{ name, typ string }{
+			{"🍎 Продукты", "expense"},
+			{"🚗 Транспорт", "expense"},
+			{"🏠 ЖКХ", "expense"},
+			{"💼 Зарплата", "income"},
+			{"🎉 Развлечения", "expense"},
+		}
+
+		for _, cat := range basicCats {
+			newCat := Category{
+				UserID: userID,
+				Name:   cat.name,
+				Type:   cat.typ,
+			}
+			if _, err := r.CreateCategory(userID, newCat); err != nil {
+				return nil, err
+			}
+		}
+
+		return r.GetCategories(userID)
+	}
+
+	return categories, nil
 }
 
-func (r *SQLiteRepository) GetCategoryByID(userID, categoryID int) (*Category, error) {
+func (r *SQLiteRepository) GetCategoryByID(userID, id int) (*Category, error) {
 	var c Category
-	var pid *int
-	row := r.db.QueryRow(
-		"SELECT id, name, type, parent_id FROM categories WHERE id = ? AND user_id = ?",
-		categoryID, userID,
-	)
-	if err := row.Scan(&c.ID, &c.Name, &c.Type, &pid); err != nil {
+	row := r.db.QueryRow(`
+        SELECT id, user_id, name, type 
+        FROM categories 
+        WHERE id = ? AND user_id = ?`,
+		id, userID)
+	if err := row.Scan(&c.ID, &c.UserID, &c.Name, &c.Type); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("категория не найдена")
+			return nil, nil
 		}
-		return nil, fmt.Errorf("scan category: %w", err)
+		return nil, fmt.Errorf("ошибка сканирования категории: %w", err)
 	}
-	c.ParentID = pid
-	c.UserID = userID
 	return &c, nil
 }
 
 func (r *SQLiteRepository) CreateCategory(userID int, c Category) (int, error) {
-	res, err := r.db.Exec(
-		"INSERT INTO categories(user_id, name, type, parent_id) VALUES(?, ?, ?, ?)",
-		userID, c.Name, c.Type, c.ParentID,
-	)
+	var globalID int
+	err := r.db.QueryRow("SELECT id FROM global_categories WHERE name = ? AND type = ?", c.Name, c.Type).Scan(&globalID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			res, err := r.db.Exec("INSERT INTO global_categories (name, type) VALUES (?, ?)", c.Name, c.Type)
+			if err != nil {
+				return 0, fmt.Errorf("create global category: %w", err)
+			}
+			id, _ := res.LastInsertId()
+			globalID = int(id)
+		} else {
+			return 0, fmt.Errorf("check global category: %w", err)
+		}
+	}
+
+	var exists int
+	err = r.db.QueryRow("SELECT COUNT(*) FROM user_categories WHERE user_id = ? AND global_category_id = ?", userID, globalID).Scan(&exists)
+	if err != nil {
+		return 0, err
+	}
+	if exists == 0 {
+		_, err = r.db.Exec("INSERT INTO user_categories (user_id, global_category_id) VALUES (?, ?)", userID, globalID)
+		if err != nil {
+			return 0, fmt.Errorf("create user category: %w", err)
+		}
+	}
+
+	res, err := r.db.Exec("INSERT INTO categories (user_id, name, type, parent_id) VALUES (?, ?, ?, ?)", userID, c.Name, c.Type, c.ParentID)
 	if err != nil {
 		return 0, fmt.Errorf("create category: %w", err)
 	}
@@ -260,26 +468,46 @@ func (r *SQLiteRepository) CreateCategory(userID int, c Category) (int, error) {
 }
 
 func (r *SQLiteRepository) RenameCategory(userID, id int, newName string) error {
-	if _, err := r.GetCategoryByID(userID, id); err != nil {
+	var globalID int
+	err := r.db.QueryRow(`
+        SELECT gc.id 
+        FROM user_categories uc
+        JOIN global_categories gc ON uc.global_category_id = gc.id
+        JOIN categories c ON c.user_id = uc.user_id AND c.name = gc.name
+        WHERE c.id = ? AND uc.user_id = ?
+    `, id, userID).Scan(&globalID)
+	if err != nil {
 		return err
 	}
 
-	_, err := r.db.Exec(
-		"UPDATE categories SET name = ? WHERE id = ? AND user_id = ?",
-		newName, id, userID,
-	)
+	_, err = r.db.Exec("UPDATE global_categories SET name = ? WHERE id = ?", newName, globalID)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec("UPDATE categories SET name = ? WHERE id = ? AND user_id = ?", newName, id, userID)
 	return err
 }
 
 func (r *SQLiteRepository) DeleteCategory(userID, id int) error {
-	if _, err := r.GetCategoryByID(userID, id); err != nil {
+	var globalID int
+	err := r.db.QueryRow(`
+        SELECT gc.id 
+        FROM user_categories uc
+        JOIN global_categories gc ON uc.global_category_id = gc.id
+        JOIN categories c ON c.user_id = uc.user_id AND c.name = gc.name
+        WHERE c.id = ? AND uc.user_id = ?
+    `, id, userID).Scan(&globalID)
+	if err != nil {
 		return err
 	}
 
-	_, err := r.db.Exec(
-		"DELETE FROM categories WHERE id = ? AND user_id = ?",
-		id, userID,
-	)
+	_, err = r.db.Exec("DELETE FROM user_categories WHERE user_id = ? AND global_category_id = ?", userID, globalID)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec("DELETE FROM categories WHERE id = ? AND user_id = ?", id, userID)
 	return err
 }
 
@@ -296,6 +524,7 @@ func (r *SQLiteRepository) AddTransaction(userID int, t Transaction) (int, error
 		return 0, fmt.Errorf("insert trans: %w", err)
 	}
 	id, _ := res.LastInsertId()
+	r.UpdateUserActivity(userID, time.Now())
 	return int(id), nil
 }
 
@@ -488,4 +717,53 @@ func (r *SQLiteRepository) RenameSaving(userID, id int, newName string) error {
 		newName, id, userID,
 	)
 	return err
+}
+
+type Version struct {
+	ID          int
+	Version     string
+	ReleaseDate time.Time
+	Description string
+}
+
+func (r *SQLiteRepository) AddVersion(version, description string) error {
+	_, err := r.db.Exec(
+		"INSERT INTO versions (version, release_date, description) VALUES (?, ?, ?)",
+		version, time.Now().Format(time.RFC3339), description,
+	)
+	return err
+}
+
+func (r *SQLiteRepository) GetLatestVersion() (*Version, error) {
+	var v Version
+	var dateStr string
+
+	err := r.db.QueryRow(
+		"SELECT id, version, release_date, description FROM versions ORDER BY release_date DESC LIMIT 1",
+	).Scan(&v.ID, &v.Version, &dateStr, &v.Description)
+
+	if err != nil {
+		return nil, err
+	}
+
+	v.ReleaseDate, _ = time.Parse(time.RFC3339, dateStr)
+	return &v, nil
+}
+
+func (r *SQLiteRepository) MarkVersionAsRead(userID, versionID int) error {
+	_, err := r.db.Exec(
+		"INSERT INTO user_version_read (user_id, version_id, read_at) VALUES (?, ?, ?)",
+		userID, versionID, time.Now().Format(time.RFC3339),
+	)
+	return err
+}
+
+func (r *SQLiteRepository) HasUserReadVersion(userID, versionID int) (bool, error) {
+	var count int
+	err := r.db.QueryRow(
+		"SELECT COUNT(*) FROM user_version_read WHERE user_id = ? AND version_id = ?",
+		userID, versionID,
+	).Scan(&count)
+
+	return count > 0, err
 }

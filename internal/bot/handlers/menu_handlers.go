@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -249,6 +250,7 @@ func (b *Bot) showSettingsMenu(chatID int64) {
 			tgbotapi.NewInlineKeyboardButtonData("📝 Категории", "manage_categories"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🆘 Поддержка", "support"),
 			tgbotapi.NewInlineKeyboardButtonData("🧹 Очистить все данные", "confirm_clear_data"),
 		),
 	)
@@ -316,6 +318,26 @@ func (b *Bot) showCategoryManagement(chatID int64, svc *service.FinanceService) 
 	msg := tgbotapi.NewMessage(chatID, "📝 <b>Категории</b>\n\nВыбери категорию для редактирования:")
 	msg.ParseMode = "HTML"
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
+	b.send(chatID, msg)
+}
+
+func (b *Bot) showSupportInfo(chatID int64) {
+	supportText := `🆘 <b>Поддержка</b>
+
+Если у вас возникли вопросы или проблемы с ботом, вы можете:
+    
+1. Написать разработчику: @LONEl1st
+2. Оставить issue на GitHub: https://github.com/IlyaMakar/finance_bot
+
+Мы постараемся ответить вам как можно скорее!`
+
+	msg := tgbotapi.NewMessage(chatID, supportText)
+	msg.ParseMode = "HTML"
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "settings_back"),
+		),
+	)
 	b.send(chatID, msg)
 }
 
@@ -407,21 +429,10 @@ func (b *Bot) showTransactionHistory(chatID int64, svc *service.FinanceService) 
 		return
 	}
 
-	if len(transactions) == 0 {
-		b.send(chatID, tgbotapi.NewMessage(chatID, "📭 У вас пока нет операций за последний месяц"))
-		return
-	}
-
 	var msgText strings.Builder
 	msgText.WriteString("📜 <b>История операций</b>\n\n")
 
 	for i, t := range transactions {
-		category, err := svc.GetCategoryByID(t.CategoryID)
-		categoryName := "❓ Неизвестно"
-		if err == nil {
-			categoryName = category.Name
-		}
-
 		formattedDate := t.Date.Format("02.01.2006")
 		formattedAmount := fmt.Sprintf("%.2f ₽", math.Abs(t.Amount))
 
@@ -437,13 +448,12 @@ func (b *Bot) showTransactionHistory(chatID int64, svc *service.FinanceService) 
 				"┣ Категория: %s\n"+
 				"┣ Сумма: <code>%s</code>\n",
 			i+1, formattedDate, operationIcon, operationType,
-			categoryName, formattedAmount,
-		))
+			t.CategoryName, formattedAmount))
 
 		if t.Comment != "" {
 			msgText.WriteString(fmt.Sprintf("┣ Комментарий: %s\n", t.Comment))
 		}
-
+		msgText.WriteString("\n")
 	}
 
 	msg := tgbotapi.NewMessage(chatID, msgText.String())
@@ -567,31 +577,38 @@ func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, st
 	expenseDetails := make(map[string]float64)
 
 	for _, t := range trans {
-		// Получаем категорию по ID
-		category, err := svc.GetCategoryByID(t.CategoryID)
-		categoryName := "Неизвестно"
-		if err == nil {
-			categoryName = category.Name
+		catName := t.CategoryName
+		if catName == "" {
+			catName = "Неизвестно"
 		}
 
 		if t.Amount > 0 {
 			totalIncome += t.Amount
-			incomeDetails[categoryName] += t.Amount
+			incomeDetails[catName] += t.Amount
 		} else {
-			totalExpense += math.Abs(t.Amount)
-			expenseDetails[categoryName] += math.Abs(t.Amount)
+			amount := math.Abs(t.Amount)
+			totalExpense += amount
+			expenseDetails[catName] += amount
 		}
 	}
 
 	msgText := fmt.Sprintf("📊 <b>Статистика за %s</b>\n\n", periodName)
+
 	msgText += fmt.Sprintf("📈 <b>Доходы:</b> %.2f ₽\n", totalIncome)
 	for cat, amount := range incomeDetails {
 		msgText += fmt.Sprintf("┣ %s: %.2f ₽\n", cat, amount)
 	}
 
 	msgText += fmt.Sprintf("\n📉 <b>Расходы:</b> %.2f ₽\n", totalExpense)
-	for cat, amount := range expenseDetails {
-		msgText += fmt.Sprintf("┣ %s: %.2f ₽\n", cat, amount)
+	if totalExpense > 0 {
+		sortedCategories := b.sortCategoriesByAmount(expenseDetails)
+
+		for _, cat := range sortedCategories {
+			amount := expenseDetails[cat]
+			percentage := (amount / totalExpense) * 100
+			msgText += fmt.Sprintf("┣ %s: %.2f ₽ (%.1f%%)\n",
+				cat, amount, percentage)
+		}
 	}
 
 	msgText += fmt.Sprintf("\n💵 <b>Баланс:</b> %.2f ₽", totalIncome-totalExpense)
@@ -604,6 +621,28 @@ func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, st
 		),
 	)
 	b.send(chatID, msg)
+}
+
+func (b *Bot) sortCategoriesByAmount(categories map[string]float64) []string {
+	type categoryAmount struct {
+		name   string
+		amount float64
+	}
+
+	var sorted []categoryAmount
+	for name, amount := range categories {
+		sorted = append(sorted, categoryAmount{name, amount})
+	}
+
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].amount > sorted[j].amount
+	})
+
+	result := make([]string, len(sorted))
+	for i, item := range sorted {
+		result[i] = item.name
+	}
+	return result
 }
 
 func (b *Bot) SendReminder(chatID int64) {
