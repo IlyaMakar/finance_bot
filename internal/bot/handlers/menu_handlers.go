@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -587,8 +588,8 @@ func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, st
 	incomeDetails := make(map[string]float64)
 	expenseDetails := make(map[string]float64)
 
+	// Собираем данные
 	for _, t := range trans {
-		// Получаем категорию по ID
 		category, err := svc.GetCategoryByID(t.CategoryID)
 		categoryName := "Неизвестно"
 		if err == nil {
@@ -599,20 +600,33 @@ func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, st
 			totalIncome += t.Amount
 			incomeDetails[categoryName] += t.Amount
 		} else {
-			totalExpense += math.Abs(t.Amount)
-			expenseDetails[categoryName] += math.Abs(t.Amount)
+			amount := math.Abs(t.Amount)
+			totalExpense += amount
+			expenseDetails[categoryName] += amount
 		}
 	}
 
+	// Формируем сообщение
 	msgText := fmt.Sprintf("📊 <b>Статистика за %s</b>\n\n", periodName)
+
+	// Доходы (как было)
 	msgText += fmt.Sprintf("📈 <b>Доходы:</b> %.2f ₽\n", totalIncome)
 	for cat, amount := range incomeDetails {
 		msgText += fmt.Sprintf("┣ %s: %.2f ₽\n", cat, amount)
 	}
 
+	// Новый блок: расходы с процентами
 	msgText += fmt.Sprintf("\n📉 <b>Расходы:</b> %.2f ₽\n", totalExpense)
-	for cat, amount := range expenseDetails {
-		msgText += fmt.Sprintf("┣ %s: %.2f ₽\n", cat, amount)
+	if totalExpense > 0 {
+		// Сортируем категории по убыванию суммы
+		sortedCategories := b.sortCategoriesByAmount(expenseDetails)
+
+		for _, cat := range sortedCategories {
+			amount := expenseDetails[cat]
+			percentage := (amount / totalExpense) * 100
+			msgText += fmt.Sprintf("┣ %s: %.2f ₽ (%.1f%%)\n",
+				cat, amount, percentage)
+		}
 	}
 
 	msgText += fmt.Sprintf("\n💵 <b>Баланс:</b> %.2f ₽", totalIncome-totalExpense)
@@ -625,6 +639,30 @@ func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, st
 		),
 	)
 	b.send(chatID, msg)
+}
+
+func (b *Bot) sortCategoriesByAmount(categories map[string]float64) []string {
+	type categoryAmount struct {
+		name   string
+		amount float64
+	}
+
+	var sorted []categoryAmount
+	for name, amount := range categories {
+		sorted = append(sorted, categoryAmount{name, amount})
+	}
+
+	// Сортировка по убыванию суммы
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].amount > sorted[j].amount
+	})
+
+	// Возвращаем только названия категорий
+	result := make([]string, len(sorted))
+	for i, item := range sorted {
+		result[i] = item.name
+	}
+	return result
 }
 
 func (b *Bot) SendReminder(chatID int64) {
