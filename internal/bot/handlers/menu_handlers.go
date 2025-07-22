@@ -249,6 +249,7 @@ func (b *Bot) showSettingsMenu(chatID int64) {
 			tgbotapi.NewInlineKeyboardButtonData("📝 Категории", "manage_categories"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🆘 Поддержка", "support"),
 			tgbotapi.NewInlineKeyboardButtonData("🧹 Очистить все данные", "confirm_clear_data"),
 		),
 	)
@@ -316,6 +317,26 @@ func (b *Bot) showCategoryManagement(chatID int64, svc *service.FinanceService) 
 	msg := tgbotapi.NewMessage(chatID, "📝 <b>Категории</b>\n\nВыбери категорию для редактирования:")
 	msg.ParseMode = "HTML"
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
+	b.send(chatID, msg)
+}
+
+func (b *Bot) showSupportInfo(chatID int64) {
+	supportText := `🆘 <b>Поддержка</b>
+
+Если у вас возникли вопросы или проблемы с ботом, вы можете:
+    
+1. Написать разработчику: @LONEl1st
+2. Оставить issue на GitHub: https://github.com/IlyaMakar/finance_bot
+
+Мы постараемся ответить вам как можно скорее!`
+
+	msg := tgbotapi.NewMessage(chatID, supportText)
+	msg.ParseMode = "HTML"
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "settings_back"),
+		),
+	)
 	b.send(chatID, msg)
 }
 

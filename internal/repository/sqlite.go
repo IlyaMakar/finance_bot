@@ -111,6 +111,22 @@ CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id
 CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id);
 CREATE INDEX IF NOT EXISTS idx_savings_user ON savings(user_id);
+
+CREATE TABLE IF NOT EXISTS versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version TEXT NOT NULL,
+    release_date TEXT NOT NULL,
+    description TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_version_read (
+    user_id INTEGER NOT NULL,
+    version_id INTEGER NOT NULL,
+    read_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, version_id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (version_id) REFERENCES versions(id)
+);
 `
 	_, err := db.Exec(schema)
 	return err
@@ -488,4 +504,53 @@ func (r *SQLiteRepository) RenameSaving(userID, id int, newName string) error {
 		newName, id, userID,
 	)
 	return err
+}
+
+type Version struct {
+	ID          int
+	Version     string
+	ReleaseDate time.Time
+	Description string
+}
+
+func (r *SQLiteRepository) AddVersion(version, description string) error {
+	_, err := r.db.Exec(
+		"INSERT INTO versions (version, release_date, description) VALUES (?, ?, ?)",
+		version, time.Now().Format(time.RFC3339), description,
+	)
+	return err
+}
+
+func (r *SQLiteRepository) GetLatestVersion() (*Version, error) {
+	var v Version
+	var dateStr string
+
+	err := r.db.QueryRow(
+		"SELECT id, version, release_date, description FROM versions ORDER BY release_date DESC LIMIT 1",
+	).Scan(&v.ID, &v.Version, &dateStr, &v.Description)
+
+	if err != nil {
+		return nil, err
+	}
+
+	v.ReleaseDate, _ = time.Parse(time.RFC3339, dateStr)
+	return &v, nil
+}
+
+func (r *SQLiteRepository) MarkVersionAsRead(userID, versionID int) error {
+	_, err := r.db.Exec(
+		"INSERT INTO user_version_read (user_id, version_id, read_at) VALUES (?, ?, ?)",
+		userID, versionID, time.Now().Format(time.RFC3339),
+	)
+	return err
+}
+
+func (r *SQLiteRepository) HasUserReadVersion(userID, versionID int) (bool, error) {
+	var count int
+	err := r.db.QueryRow(
+		"SELECT COUNT(*) FROM user_version_read WHERE user_id = ? AND version_id = ?",
+		userID, versionID,
+	).Scan(&count)
+
+	return count > 0, err
 }

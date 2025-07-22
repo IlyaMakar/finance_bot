@@ -151,3 +151,19 @@ func (s *FinanceService) RenameSaving(id int, newName string) error {
 	}
 	return s.repo.RenameSaving(s.userID, id, newName)
 }
+
+func (s *FinanceService) AddVersion(version, description string) error {
+	return s.repo.AddVersion(version, description)
+}
+
+func (s *FinanceService) GetLatestVersion() (*repository.Version, error) {
+	return s.repo.GetLatestVersion()
+}
+
+func (s *FinanceService) MarkVersionAsRead(versionID int) error {
+	return s.repo.MarkVersionAsRead(s.userID, versionID)
+}
+
+func (s *FinanceService) HasUserReadVersion(versionID int) (bool, error) {
+	return s.repo.HasUserReadVersion(s.userID, versionID)
+}

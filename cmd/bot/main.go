@@ -59,6 +59,11 @@ func main() {
 		log.Fatalf("не удалось создать бота: %v", err)
 	}
 
+	// Проверяем обновления версии и отправляем уведомления
+	botInstance.CheckForUpdates()
+	botInstance.NotifyUsersAboutUpdate()
+
+	// Запускаем бота
 	go botInstance.Start()
 	go startReminder(botInstance, repo, false) // false - обычный режим, true - тестовый
 

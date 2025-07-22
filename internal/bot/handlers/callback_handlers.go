@@ -163,6 +163,8 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 
 	case "main_menu":
 		b.sendMainMenu(chatID, "Главное меню")
+	case "support":
+		b.showSupportInfo(chatID)
 
 	case "skip_comment":
 		editMsg := tgbotapi.NewEditMessageReplyMarkup(chatID, q.Message.MessageID, tgbotapi.InlineKeyboardMarkup{})
