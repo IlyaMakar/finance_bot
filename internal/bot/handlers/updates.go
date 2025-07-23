@@ -9,7 +9,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-const currentVersion = "1.1.0"
+const currentVersion = "1.0.0"
 
 func (b *Bot) CheckForUpdates() {
 	latestVersion, err := b.repo.GetLatestVersion()
@@ -62,9 +62,9 @@ func (b *Bot) NotifyUsersAboutUpdate() {
 
 func getVersionDescription(version string) string {
 	descriptions := map[string]string{
-		"1.1.0": `🌟 *Встречайте обновление, которое изменит всё!* 🌟
+		"1.0.0": `🌟 *Встречайте обновление, которое изменит всё!* 🌟
 
-✨ *Что нового в версии 1.1.0:*
+✨ *Что нового в версии 1.0.0:*
 - 📊 *Супер-статистика!* Теперь просмотр финансов за любой период стал ещё удобнее и нагляднее!
 - 📜 *История транзакций!* Погружайтесь в детали своих операций с новой функцией просмотра истории.
 - ⏰ *Точное время!* Исправили ошибку с отправкой сообщений — теперь всё работает как часы!

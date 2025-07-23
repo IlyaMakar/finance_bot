@@ -16,6 +16,7 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	chatID := q.From.ID
 	data := q.Data
 
+	// Получаем или создаем пользователя, обновляем активность
 	user, err := b.repo.GetOrCreateUser(
 		q.From.ID,
 		q.From.UserName,
@@ -26,6 +27,15 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		logger.LogError(q.From.UserName, fmt.Sprintf("Ошибка: %v", err))
 		b.sendError(chatID, err)
 		return
+	}
+	// Обновляем last_active при каждом callback
+	if err := b.repo.UpdateUserActivity(user.ID, time.Now()); err != nil {
+		logger.LogError(q.From.UserName, fmt.Sprintf("Ошибка обновления активности: %v", err))
+	}
+
+	// Записываем клик по кнопке
+	if err := b.repo.RecordButtonClick(int(chatID), data); err != nil {
+		logger.LogError(q.From.UserName, fmt.Sprintf("Ошибка записи клика: %v", err))
 	}
 
 	svc := service.NewService(b.repo, user)

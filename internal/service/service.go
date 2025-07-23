@@ -20,16 +20,10 @@ func NewService(repo *repository.SQLiteRepository, user *repository.User) *Finan
 }
 
 func (s *FinanceService) DeleteCategory(id int) error {
-	if _, err := s.repo.GetCategoryByID(s.userID, id); err != nil {
-		return err
-	}
 	return s.repo.DeleteCategory(s.userID, id)
 }
 
 func (s *FinanceService) RenameCategory(id int, newName string) error {
-	if _, err := s.repo.GetCategoryByID(s.userID, id); err != nil {
-		return err
-	}
 	return s.repo.RenameCategory(s.userID, id, newName)
 }
 

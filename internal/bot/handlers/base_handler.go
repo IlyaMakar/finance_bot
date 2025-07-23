@@ -46,6 +46,11 @@ func NewBot(token string, repo *repository.SQLiteRepository) (*Bot, error) {
 	return &Bot{bot: botAPI, repo: repo}, nil
 }
 
+// GetRepo возвращает репозиторий бота
+func (b *Bot) GetRepo() *repository.SQLiteRepository {
+	return b.repo
+}
+
 func (b *Bot) send(chatID int64, c tgbotapi.Chattable) {
 	_, err := b.bot.Send(c)
 	if err != nil {
