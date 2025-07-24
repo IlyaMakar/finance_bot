@@ -253,36 +253,46 @@ func (b *Bot) handleAmount(m *tgbotapi.Message) {
 }
 
 func (b *Bot) handleComment(m *tgbotapi.Message, svc *service.FinanceService) {
-	s := userStates[m.From.ID]
+	state, ok := userStates[m.From.ID]
+	if !ok || state.TempCategoryID == 0 {
+		b.sendError(m.Chat.ID, fmt.Errorf("не выбрана категория"))
+		return
+	}
+
 	if m.Text != "Пропустить" {
-		s.TempComment = m.Text
+		state.TempComment = m.Text
 	} else {
-		s.TempComment = ""
+		state.TempComment = ""
 	}
 
 	editMsg := tgbotapi.NewEditMessageReplyMarkup(m.Chat.ID, m.MessageID, tgbotapi.InlineKeyboardMarkup{})
 	b.bot.Send(editMsg)
 
-	c, err := svc.GetCategoryByID(s.TempCategoryID)
+	amount := state.TempAmount
+	if state.TempType == "expense" {
+		amount = -amount
+	}
+
+	_, err := svc.AddTransaction(amount, state.TempCategoryID, "card", state.TempComment)
 	if err != nil {
 		b.sendError(m.Chat.ID, err)
 		return
 	}
-	amt := s.TempAmount
-	if c.Type == "expense" {
-		amt = -amt
+
+	category, err := svc.GetCategoryByID(state.TempCategoryID)
+	categoryName := "Неизвестно"
+	if err == nil && category != nil {
+		categoryName = category.Name
 	}
-	if _, err := svc.AddTransaction(amt, s.TempCategoryID, "card", s.TempComment); err != nil {
-		b.sendError(m.Chat.ID, err)
-		return
+
+	operationType := "Доход"
+	if amount < 0 {
+		operationType = "Расход"
+		amount = -amount
 	}
-	label := "Доход"
-	if amt < 0 {
-		label = "Расход"
-		amt = -amt
-	}
+
 	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID,
-		fmt.Sprintf("✅ %s: %s, %.2f ₽", label, c.Name, amt)))
+		fmt.Sprintf("✅ %s: %s, %.2f ₽", operationType, categoryName, amount)))
 
 	delete(userStates, m.From.ID)
 	b.sendMainMenu(m.Chat.ID, "🎉 Операция добавлена! Что дальше?")

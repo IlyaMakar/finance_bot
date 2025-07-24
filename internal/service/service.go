@@ -52,17 +52,48 @@ func (s *FinanceService) CreateCategory(name, typ string, parent *int) (int, err
 }
 
 func (s *FinanceService) GetCategoryByID(id int) (*repository.Category, error) {
-	return s.repo.GetCategoryByID(s.userID, id)
+	if id <= 0 {
+		return nil, fmt.Errorf("неверный ID категории")
+	}
+
+	cat, err := s.repo.GetCategoryByID(s.userID, id)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка базы данных: %v", err)
+	}
+
+	if cat == nil {
+		return nil, fmt.Errorf("категория не найдена или не принадлежит пользователю")
+	}
+
+	return cat, nil
+}
+
+func (s *FinanceService) GetCategoryWithTypeCheck(id int, expectedType string) (*repository.Category, error) {
+	cat, err := s.GetCategoryByID(id)
+	if err != nil {
+		return nil, fmt.Errorf("категория не найдена: %v", err)
+	}
+
+	if cat.Type != expectedType {
+		return nil, fmt.Errorf("несоответствие типа категории: ожидается %s, получено %s", expectedType, cat.Type)
+	}
+
+	return cat, nil
 }
 
 func (s *FinanceService) AddTransaction(amount float64, categoryID int, method, comment string) (int, error) {
-	c, err := s.repo.GetCategoryByID(s.userID, categoryID)
+	cat, err := s.GetCategoryByID(categoryID)
 	if err != nil {
-		return 0, fmt.Errorf("категория не найдена")
+		return 0, fmt.Errorf("ошибка категории: %v", err)
 	}
 
-	if (amount < 0 && c.Type != "expense") || (amount > 0 && c.Type != "income") {
-		return 0, fmt.Errorf("несоответствие типа и категории")
+	expectedType := "income"
+	if amount < 0 {
+		expectedType = "expense"
+	}
+
+	if cat.Type != expectedType {
+		return 0, fmt.Errorf("несоответствие типа: категория %s, операция %s", cat.Type, expectedType)
 	}
 
 	return s.repo.AddTransaction(s.userID, repository.Transaction{
@@ -81,14 +112,10 @@ func (s *FinanceService) GetTransactionsForPeriod(start, end time.Time) ([]repos
 	}
 
 	for i := range transactions {
-		if transactions[i].CategoryName == "" {
-			if cat, err := s.repo.GetCategoryByID(s.userID, transactions[i].CategoryID); err == nil {
-				transactions[i].CategoryName = cat.Name
-			} else {
-				transactions[i].CategoryName = "Неизвестно"
-				log.Printf("Категория с ID %d не найдена для транзакции %d",
-					transactions[i].CategoryID, transactions[i].ID)
-			}
+		if cat, err := s.repo.GetCategoryByID(s.userID, transactions[i].CategoryID); err == nil {
+			transactions[i].CategoryName = cat.Name
+		} else {
+			transactions[i].CategoryName = "Неизвестно"
 		}
 	}
 

@@ -28,11 +28,12 @@ type Bot struct {
 }
 
 type UserState struct {
-	Step           string
-	TempCategoryID int
-	TempAmount     float64
-	TempComment    string
-	TempType       string
+	Step             string
+	TempCategoryID   int
+	TempAmount       float64
+	TempCategoryName string
+	TempComment      string
+	TempType         string
 }
 
 var userStates = make(map[int64]UserState)

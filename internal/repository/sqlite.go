@@ -415,24 +415,19 @@ func (r *SQLiteRepository) GetCategories(userID int) ([]Category, error) {
 	return categories, nil
 }
 
-func (r *SQLiteRepository) GetCategoryByID(userID, categoryID int) (*Category, error) {
+func (r *SQLiteRepository) GetCategoryByID(userID, id int) (*Category, error) {
 	var c Category
-	var pid *int
 	row := r.db.QueryRow(`
-        SELECT c.id, gc.name, gc.type, c.parent_id 
-        FROM user_categories uc
-        JOIN global_categories gc ON uc.global_category_id = gc.id
-        JOIN categories c ON c.user_id = uc.user_id AND c.name = gc.name
-        WHERE c.id = ? AND uc.user_id = ?
-    `, categoryID, userID)
-	if err := row.Scan(&c.ID, &c.Name, &c.Type, &pid); err != nil {
+        SELECT id, user_id, name, type 
+        FROM categories 
+        WHERE id = ? AND user_id = ?`,
+		id, userID)
+	if err := row.Scan(&c.ID, &c.UserID, &c.Name, &c.Type); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("категория не найдена")
+			return nil, nil
 		}
-		return nil, fmt.Errorf("scan category: %w", err)
+		return nil, fmt.Errorf("ошибка сканирования категории: %w", err)
 	}
-	c.ParentID = pid
-	c.UserID = userID
 	return &c, nil
 }
 
@@ -534,14 +529,10 @@ func (r *SQLiteRepository) AddTransaction(userID int, t Transaction) (int, error
 }
 
 func (r *SQLiteRepository) GetTransactionsByPeriod(userID int, start, end time.Time) ([]Transaction, error) {
-	rows, err := r.db.Query(`
-        SELECT t.id, t.amount, t.category_id, t.date, t.payment_method, t.comment, 
-               c.name as category_name
-        FROM transactions t
-        LEFT JOIN categories c ON t.category_id = c.id AND c.user_id = t.user_id
-        WHERE t.user_id = ? AND t.date >= ? AND t.date < ?
-        ORDER BY t.date DESC`,
-		userID, start.Format(time.RFC3339), end.Format(time.RFC3339))
+	rows, err := r.db.Query(
+		"SELECT id, amount, category_id, date, payment_method, comment FROM transactions WHERE user_id = ? AND date >= ? AND date < ? ORDER BY date DESC",
+		userID, start.Format(time.RFC3339), end.Format(time.RFC3339),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("query trans: %w", err)
 	}
@@ -551,18 +542,11 @@ func (r *SQLiteRepository) GetTransactionsByPeriod(userID int, start, end time.T
 	for rows.Next() {
 		var t Transaction
 		var ds string
-		var categoryName sql.NullString
-		if err := rows.Scan(&t.ID, &t.Amount, &t.CategoryID, &ds,
-			&t.PaymentMethod, &t.Comment, &categoryName); err != nil {
+		if err := rows.Scan(&t.ID, &t.Amount, &t.CategoryID, &ds, &t.PaymentMethod, &t.Comment); err != nil {
 			return nil, fmt.Errorf("scan trans: %w", err)
 		}
 		t.Date, _ = time.Parse(time.RFC3339, ds)
 		t.UserID = userID
-		if categoryName.Valid {
-			t.CategoryName = categoryName.String
-		} else {
-			t.CategoryName = "Неизвестно"
-		}
 		res = append(res, t)
 	}
 	return res, nil
