@@ -109,7 +109,6 @@ func (b *Bot) handleUserInput(m *tgbotapi.Message, svc *service.FinanceService) 
 		state.TempAmount = amount
 		userStates[m.From.ID] = state
 
-		// Обновляем транзакцию
 		err = svc.UpdateTransactionAmount(state.TempCategoryID, amount)
 		if err != nil {
 			b.sendError(m.Chat.ID, err)

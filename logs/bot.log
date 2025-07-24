@@ -514,3 +514,47 @@ INFO 2025/07/23 14:51:15 logger.go:38: CMD @LONEl1st: Команда /start
 INFO 2025/07/23 14:51:21 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
 INFO 2025/07/23 14:51:24 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
 INFO 2025/07/23 14:51:30 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/07/24 09:35:12 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/07/24 09:42:34 logger.go:38: CMD @LONEl1st: Получено сообщение: /start
+INFO 2025/07/24 09:42:34 logger.go:38: CMD @LONEl1st: Команда /start
+INFO 2025/07/24 09:42:37 logger.go:49: BTN @LONEl1st: start_transaction
+INFO 2025/07/24 09:42:38 logger.go:49: BTN @LONEl1st: cancel
+INFO 2025/07/24 09:42:40 logger.go:38: CMD @LONEl1st: Получено сообщение: 📊 Статистика
+INFO 2025/07/24 09:42:40 logger.go:38: CMD @LONEl1st: Кнопка: Статистика
+INFO 2025/07/24 09:42:42 logger.go:49: BTN @LONEl1st: stats_month
+INFO 2025/07/24 09:43:38 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/07/24 09:48:55 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/07/24 09:49:03 logger.go:38: CMD @LONEl1st: Получено сообщение: ⚙️ Настройки
+INFO 2025/07/24 09:49:03 logger.go:38: CMD @LONEl1st: Кнопка: Настройки
+INFO 2025/07/24 09:49:04 logger.go:49: BTN @LONEl1st: manage_categories
+INFO 2025/07/24 09:50:10 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/07/24 09:51:42 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/07/24 09:51:48 logger.go:38: CMD @LONEl1st: Получено сообщение: 💵 Накопления
+INFO 2025/07/24 09:51:48 logger.go:38: CMD @LONEl1st: Кнопка: Накопления
+INFO 2025/07/24 09:51:52 logger.go:38: CMD @LONEl1st: Получено сообщение: ⚙️ Настройки
+INFO 2025/07/24 09:51:52 logger.go:38: CMD @LONEl1st: Кнопка: Настройки
+INFO 2025/07/24 09:51:54 logger.go:49: BTN @LONEl1st: manage_categories
+INFO 2025/07/24 09:51:55 logger.go:49: BTN @LONEl1st: settings_back
+INFO 2025/07/24 09:51:56 logger.go:38: CMD @LONEl1st: Получено сообщение: ➕ Добавить операцию
+INFO 2025/07/24 09:51:56 logger.go:38: CMD @LONEl1st: Кнопка: Добавить операцию
+INFO 2025/07/24 09:51:58 logger.go:49: BTN @LONEl1st: show_history
+INFO 2025/07/24 09:52:00 logger.go:49: BTN @LONEl1st: stats_back
+INFO 2025/07/24 09:52:01 logger.go:38: CMD @LONEl1st: Получено сообщение: 📊 Статистика
+INFO 2025/07/24 09:52:01 logger.go:38: CMD @LONEl1st: Кнопка: Статистика
+INFO 2025/07/24 09:52:02 logger.go:49: BTN @LONEl1st: stats_month
+INFO 2025/07/24 09:52:43 logger.go:38: CMD @LONEl1st: Получено сообщение: ➕ Добавить операцию
+INFO 2025/07/24 09:52:43 logger.go:38: CMD @LONEl1st: Кнопка: Добавить операцию
+INFO 2025/07/24 09:52:45 logger.go:49: BTN @LONEl1st: type_income
+INFO 2025/07/24 09:52:46 logger.go:49: BTN @LONEl1st: cancel
+INFO 2025/07/24 09:52:48 logger.go:38: CMD @LONEl1st: Получено сообщение: 📊 Статистика
+INFO 2025/07/24 09:52:48 logger.go:38: CMD @LONEl1st: Кнопка: Статистика
+INFO 2025/07/24 09:52:49 logger.go:38: CMD @LONEl1st: Получено сообщение: ➕ Добавить операцию
+INFO 2025/07/24 09:52:49 logger.go:38: CMD @LONEl1st: Кнопка: Добавить операцию
+INFO 2025/07/24 09:52:50 logger.go:49: BTN @LONEl1st: type_expense
+INFO 2025/07/24 09:53:28 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/07/24 10:05:36 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/07/24 10:05:38 logger.go:38: CMD @LONEl1st: Получено сообщение: 📊 Статистика
+INFO 2025/07/24 10:05:38 logger.go:38: CMD @LONEl1st: Кнопка: Статистика
+INFO 2025/07/24 10:05:40 logger.go:49: BTN @LONEl1st: stats_month
+INFO 2025/07/24 10:05:42 logger.go:49: BTN @LONEl1st: stats_back
+INFO 2025/07/24 10:05:50 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...

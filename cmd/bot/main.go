@@ -39,7 +39,6 @@ func main() {
 		log.Fatalf("TELEGRAM_TOKEN не задан")
 	}
 
-	// Определяем, использовать ли тестовую базу
 	isTestMode := os.Getenv("TEST_MODE") == "true"
 	dbPath := "finance.db"
 	if isTestMode {
@@ -71,25 +70,20 @@ func main() {
 		log.Fatalf("не удалось создать бота: %v", err)
 	}
 
-	// Проверяем обновления версии и отправляем уведомления
 	botInstance.CheckForUpdates()
 	botInstance.NotifyUsersAboutUpdate()
 
-	// Загружаем временную зону Екатеринбурга (UTC+5)
 	loc, err := time.LoadLocation("Asia/Yekaterinburg")
 	if err != nil {
 		logger.LogError("system", fmt.Sprintf("Не удалось загрузить временную зону Asia/Yekaterinburg: %v", err))
 		log.Fatalf("Ошибка загрузки временной зоны: %v", err)
 	}
 
-	// Сбор и вывод начальной статистики при старте
 	printInitialStats(db, loc)
 
-	// Запускаем бота
 	go botInstance.Start()
-	go startReminder(botInstance, repo, isTestMode)     // Сохранено из исходного кода с поддержкой testMode
-	go startBackgroundStats(botInstance.GetRepo(), loc) // Фоновое обновление статистики
-
+	go startReminder(botInstance, repo, isTestMode)
+	go startBackgroundStats(botInstance.GetRepo(), loc)
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	logger.LogCommandByID(0, "Бот успешно запущен. Ожидание команд...")
@@ -108,7 +102,6 @@ func printInitialStats(db *sql.DB, loc *time.Location) {
 	var todayButtonClicks, allTimeButtonClicks, lastMonthClicks map[string]int
 	var totalTodayClicks, totalAllTimeClicks int
 
-	// 1. Новые пользователи за сегодня
 	err := db.QueryRow(`
 		SELECT COUNT(*) FROM users WHERE created_at >= ? AND created_at < ?
 	`, startOfDay.Format(time.RFC3339), startOfDay.AddDate(0, 0, 1).Format(time.RFC3339)).Scan(&newUsersToday)
@@ -117,14 +110,12 @@ func printInitialStats(db *sql.DB, loc *time.Location) {
 		newUsersToday = 0
 	}
 
-	// 2. Общее количество пользователей
 	err = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&totalUsers)
 	if err != nil {
 		log.Printf("Ошибка при подсчете общего числа пользователей: %v", err)
 		totalUsers = 0
 	}
 
-	// 3. Активные пользователи (за последние 24 часа)
 	err = db.QueryRow(`
 		SELECT COUNT(*) FROM user_activity WHERE last_active >= ?
 	`, now.Add(-24*time.Hour).Format(time.RFC3339)).Scan(&activeUsers)
@@ -134,7 +125,6 @@ func printInitialStats(db *sql.DB, loc *time.Location) {
 	}
 	inactiveUsers := totalUsers - activeUsers
 
-	// 4. Клика по кнопкам за сегодня
 	rows, err := db.Query(`
 		SELECT button_name, COUNT(*) FROM button_clicks WHERE click_time >= ? GROUP BY button_name
 	`, startOfDay.Format(time.RFC3339))
@@ -155,7 +145,6 @@ func printInitialStats(db *sql.DB, loc *time.Location) {
 		}
 	}
 
-	// 5. Клика по кнопкам за все время
 	rows, err = db.Query(`
 		SELECT button_name, COUNT(*) FROM button_clicks GROUP BY button_name
 	`)
@@ -176,7 +165,6 @@ func printInitialStats(db *sql.DB, loc *time.Location) {
 		}
 	}
 
-	// 6. Активные пользователи за прошлый месяц
 	err = db.QueryRow(`
 		SELECT COUNT(*) FROM user_activity WHERE last_active >= ? AND last_active < ?
 	`, lastMonthStart.Format(time.RFC3339), lastMonthEnd.Format(time.RFC3339)).Scan(&lastMonthActive)
@@ -189,7 +177,6 @@ func printInitialStats(db *sql.DB, loc *time.Location) {
 		activityChange = (float64(activeUsers) - float64(lastMonthActive)) / float64(lastMonthActive) * 100
 	}
 
-	// 7. Клика за прошлый месяц для процентного соотношения
 	rows, err = db.Query(`
 		SELECT button_name, COUNT(*) FROM button_clicks WHERE click_time >= ? AND click_time < ? GROUP BY button_name
 	`, lastMonthStart.Format(time.RFC3339), lastMonthEnd.Format(time.RFC3339))
@@ -209,7 +196,6 @@ func printInitialStats(db *sql.DB, loc *time.Location) {
 		}
 	}
 
-	// Вывод статистики в консоль
 	fmt.Println("=== Статистика бота при старте ===")
 	fmt.Printf("Дата и время: %s\n", now.Format("02.01.2006 15:04"))
 	fmt.Printf("Новых пользователей за сегодня: %d\n", newUsersToday)
@@ -239,7 +225,6 @@ func printInitialStats(db *sql.DB, loc *time.Location) {
 		fmt.Printf("Клик по %s за все время: %d (%.2f%% от прошлого месяца)\n", button, count, change)
 	}
 
-	// Создание папки logs и запись логов
 	logDir := "logs"
 	if _, err := os.Stat(logDir); os.IsNotExist(err) {
 		err = os.MkdirAll(logDir, 0755)
@@ -348,7 +333,7 @@ func startReminder(botInstance *handlers.Bot, repo *repository.SQLiteRepository,
 }
 
 func startBackgroundStats(repo *repository.SQLiteRepository, loc *time.Location) {
-	ticker := time.NewTicker(15 * time.Second) // Обновление каждые 15 секунд (для теста)
+	ticker := time.NewTicker(2 * time.Hour)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -361,13 +346,11 @@ func startBackgroundStats(repo *repository.SQLiteRepository, loc *time.Location)
 		var todayButtonClicks, lastMonthClicks map[string]int
 		var totalTodayClicks int
 
-		// Активные пользователи (за последние 24 часа)
 		if err := repo.GetActiveUsersCount(now.Add(-24*time.Hour), &activeUsers); err != nil {
 			logger.LogError("system", fmt.Sprintf("Ошибка подсчета активных пользователей: %v", err))
 			continue
 		}
 
-		// Клика по кнопкам за сегодня
 		if err := repo.GetButtonClicksCount(startOfDay, &todayButtonClicks); err != nil {
 			logger.LogError("system", fmt.Sprintf("Ошибка подсчета кликов за сегодня: %v", err))
 			continue
@@ -376,7 +359,6 @@ func startBackgroundStats(repo *repository.SQLiteRepository, loc *time.Location)
 			totalTodayClicks += count
 		}
 
-		// Активные пользователи за прошлый месяц
 		if err := repo.GetActiveUsersCountForPeriod(lastMonthStart, lastMonthEnd, &lastMonthActive); err != nil {
 			logger.LogError("system", fmt.Sprintf("Ошибка подсчета активности прошлого месяца: %v", err))
 			continue
@@ -386,13 +368,11 @@ func startBackgroundStats(repo *repository.SQLiteRepository, loc *time.Location)
 			activityChange = (float64(activeUsers) - float64(lastMonthActive)) / float64(lastMonthActive) * 100
 		}
 
-		// Клика за прошлый месяц
 		if err := repo.GetButtonClicksCountForPeriod(lastMonthStart, lastMonthEnd, &lastMonthClicks); err != nil {
 			logger.LogError("system", fmt.Sprintf("Ошибка подсчета кликов прошлого месяца: %v", err))
 			continue
 		}
 
-		// Запись статистики в лог
 		logDir := "logs"
 		if _, err := os.Stat(logDir); os.IsNotExist(err) {
 			if err := os.MkdirAll(logDir, 0755); err != nil {
@@ -402,7 +382,7 @@ func startBackgroundStats(repo *repository.SQLiteRepository, loc *time.Location)
 		}
 
 		logFilePath := filepath.Join(logDir, "stats.log")
-		logFile, err := os.OpenFile(logFilePath, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644) // Перезапись логов
+		logFile, err := os.OpenFile(logFilePath, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			log.Printf("Ошибка открытия файла логов: %v", err)
 			continue

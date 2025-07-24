@@ -46,7 +46,6 @@ func NewBot(token string, repo *repository.SQLiteRepository) (*Bot, error) {
 	return &Bot{bot: botAPI, repo: repo}, nil
 }
 
-// GetRepo возвращает репозиторий бота
 func (b *Bot) GetRepo() *repository.SQLiteRepository {
 	return b.repo
 }

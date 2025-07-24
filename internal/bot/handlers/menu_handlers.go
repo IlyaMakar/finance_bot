@@ -429,21 +429,10 @@ func (b *Bot) showTransactionHistory(chatID int64, svc *service.FinanceService) 
 		return
 	}
 
-	if len(transactions) == 0 {
-		b.send(chatID, tgbotapi.NewMessage(chatID, "📭 У вас пока нет операций за последний месяц"))
-		return
-	}
-
 	var msgText strings.Builder
 	msgText.WriteString("📜 <b>История операций</b>\n\n")
 
 	for i, t := range transactions {
-		category, err := svc.GetCategoryByID(t.CategoryID)
-		categoryName := "❓ Неизвестно"
-		if err == nil {
-			categoryName = category.Name
-		}
-
 		formattedDate := t.Date.Format("02.01.2006")
 		formattedAmount := fmt.Sprintf("%.2f ₽", math.Abs(t.Amount))
 
@@ -459,13 +448,12 @@ func (b *Bot) showTransactionHistory(chatID int64, svc *service.FinanceService) 
 				"┣ Категория: %s\n"+
 				"┣ Сумма: <code>%s</code>\n",
 			i+1, formattedDate, operationIcon, operationType,
-			categoryName, formattedAmount,
-		))
+			t.CategoryName, formattedAmount))
 
 		if t.Comment != "" {
 			msgText.WriteString(fmt.Sprintf("┣ Комментарий: %s\n", t.Comment))
 		}
-
+		msgText.WriteString("\n")
 	}
 
 	msg := tgbotapi.NewMessage(chatID, msgText.String())
@@ -588,37 +576,31 @@ func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, st
 	incomeDetails := make(map[string]float64)
 	expenseDetails := make(map[string]float64)
 
-	// Собираем данные
 	for _, t := range trans {
-		category, err := svc.GetCategoryByID(t.CategoryID)
-		categoryName := "Неизвестно"
-		if err == nil {
-			categoryName = category.Name
+		catName := t.CategoryName
+		if catName == "" {
+			catName = "Неизвестно"
 		}
 
 		if t.Amount > 0 {
 			totalIncome += t.Amount
-			incomeDetails[categoryName] += t.Amount
+			incomeDetails[catName] += t.Amount
 		} else {
 			amount := math.Abs(t.Amount)
 			totalExpense += amount
-			expenseDetails[categoryName] += amount
+			expenseDetails[catName] += amount
 		}
 	}
 
-	// Формируем сообщение
 	msgText := fmt.Sprintf("📊 <b>Статистика за %s</b>\n\n", periodName)
 
-	// Доходы (как было)
 	msgText += fmt.Sprintf("📈 <b>Доходы:</b> %.2f ₽\n", totalIncome)
 	for cat, amount := range incomeDetails {
 		msgText += fmt.Sprintf("┣ %s: %.2f ₽\n", cat, amount)
 	}
 
-	// Новый блок: расходы с процентами
 	msgText += fmt.Sprintf("\n📉 <b>Расходы:</b> %.2f ₽\n", totalExpense)
 	if totalExpense > 0 {
-		// Сортируем категории по убыванию суммы
 		sortedCategories := b.sortCategoriesByAmount(expenseDetails)
 
 		for _, cat := range sortedCategories {
@@ -652,12 +634,10 @@ func (b *Bot) sortCategoriesByAmount(categories map[string]float64) []string {
 		sorted = append(sorted, categoryAmount{name, amount})
 	}
 
-	// Сортировка по убыванию суммы
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i].amount > sorted[j].amount
 	})
 
-	// Возвращаем только названия категорий
 	result := make([]string, len(sorted))
 	for i, item := range sorted {
 		result[i] = item.name

@@ -36,6 +36,7 @@ type Transaction struct {
 	Amount        float64
 	CategoryID    int
 	Date          time.Time
+	CategoryName  string
 	PaymentMethod string
 	Comment       string
 }
@@ -170,7 +171,6 @@ CREATE TABLE IF NOT EXISTS user_version_read (
 		return err
 	}
 
-	// Инициализация глобальных категорий, если их нет
 	var count int
 	err = db.QueryRow("SELECT COUNT(*) FROM global_categories").Scan(&count)
 	if err != nil {
@@ -261,7 +261,6 @@ func (r *SQLiteRepository) GetOrCreateUser(telegramID int64, username, firstName
 
 	if err == nil {
 		user.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-		// Обновляем last_active при входе
 		r.UpdateUserActivity(user.ID, time.Now())
 		return &user, nil
 	}
@@ -284,7 +283,6 @@ func (r *SQLiteRepository) GetOrCreateUser(telegramID int64, username, firstName
 			LastName:   lastName,
 			CreatedAt:  time.Now(),
 		}
-		// Инициализируем запись активности при создании пользователя
 		r.UpdateUserActivity(user.ID, time.Now())
 		return &user, nil
 	}
@@ -293,7 +291,6 @@ func (r *SQLiteRepository) GetOrCreateUser(telegramID int64, username, firstName
 }
 
 func (r *SQLiteRepository) UpdateUserActivity(userID int, activeTime time.Time) error {
-	// Проверяем, существует ли запись
 	var exists int
 	err := r.db.QueryRow("SELECT COUNT(*) FROM user_activity WHERE user_id = ?", userID).Scan(&exists)
 	if err != nil {
@@ -371,19 +368,16 @@ func (r *SQLiteRepository) GetButtonClicksCountForPeriod(start, end time.Time, c
 }
 
 func (r *SQLiteRepository) GetCategories(userID int) ([]Category, error) {
-	rows, err := r.db.Query(`
-        SELECT c.id, gc.name, gc.type, c.parent_id 
-        FROM user_categories uc
-        JOIN global_categories gc ON uc.global_category_id = gc.id
-        JOIN categories c ON c.user_id = uc.user_id AND c.name = gc.name
-        WHERE uc.user_id = ? ORDER BY gc.name
-    `, userID)
+	rows, err := r.db.Query(
+		"SELECT id, name, type, parent_id FROM categories WHERE user_id = ?",
+		userID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("get categories: %w", err)
 	}
 	defer rows.Close()
 
-	var cats []Category
+	var categories []Category
 	for rows.Next() {
 		var c Category
 		var pid *int
@@ -392,9 +386,33 @@ func (r *SQLiteRepository) GetCategories(userID int) ([]Category, error) {
 		}
 		c.ParentID = pid
 		c.UserID = userID
-		cats = append(cats, c)
+		categories = append(categories, c)
 	}
-	return cats, nil
+
+	if len(categories) == 0 {
+		basicCats := []struct{ name, typ string }{
+			{"🍎 Продукты", "expense"},
+			{"🚗 Транспорт", "expense"},
+			{"🏠 ЖКХ", "expense"},
+			{"💼 Зарплата", "income"},
+			{"🎉 Развлечения", "expense"},
+		}
+
+		for _, cat := range basicCats {
+			newCat := Category{
+				UserID: userID,
+				Name:   cat.name,
+				Type:   cat.typ,
+			}
+			if _, err := r.CreateCategory(userID, newCat); err != nil {
+				return nil, err
+			}
+		}
+
+		return r.GetCategories(userID)
+	}
+
+	return categories, nil
 }
 
 func (r *SQLiteRepository) GetCategoryByID(userID, categoryID int) (*Category, error) {
@@ -419,7 +437,6 @@ func (r *SQLiteRepository) GetCategoryByID(userID, categoryID int) (*Category, e
 }
 
 func (r *SQLiteRepository) CreateCategory(userID int, c Category) (int, error) {
-	// Проверяем, существует ли глобальная категория
 	var globalID int
 	err := r.db.QueryRow("SELECT id FROM global_categories WHERE name = ? AND type = ?", c.Name, c.Type).Scan(&globalID)
 	if err != nil {
@@ -435,7 +452,6 @@ func (r *SQLiteRepository) CreateCategory(userID int, c Category) (int, error) {
 		}
 	}
 
-	// Проверяем, есть ли уже связь
 	var exists int
 	err = r.db.QueryRow("SELECT COUNT(*) FROM user_categories WHERE user_id = ? AND global_category_id = ?", userID, globalID).Scan(&exists)
 	if err != nil {
@@ -448,7 +464,6 @@ func (r *SQLiteRepository) CreateCategory(userID int, c Category) (int, error) {
 		}
 	}
 
-	// Создаем запись в categories для совместимости
 	res, err := r.db.Exec("INSERT INTO categories (user_id, name, type, parent_id) VALUES (?, ?, ?, ?)", userID, c.Name, c.Type, c.ParentID)
 	if err != nil {
 		return 0, fmt.Errorf("create category: %w", err)
@@ -458,7 +473,6 @@ func (r *SQLiteRepository) CreateCategory(userID int, c Category) (int, error) {
 }
 
 func (r *SQLiteRepository) RenameCategory(userID, id int, newName string) error {
-	// Найти глобальную категорию и обновить ее
 	var globalID int
 	err := r.db.QueryRow(`
         SELECT gc.id 
@@ -476,7 +490,6 @@ func (r *SQLiteRepository) RenameCategory(userID, id int, newName string) error 
 		return err
 	}
 
-	// Обновляем локальную категорию
 	_, err = r.db.Exec("UPDATE categories SET name = ? WHERE id = ? AND user_id = ?", newName, id, userID)
 	return err
 }
@@ -494,13 +507,11 @@ func (r *SQLiteRepository) DeleteCategory(userID, id int) error {
 		return err
 	}
 
-	// Удаляем связь пользователя с категорией
 	_, err = r.db.Exec("DELETE FROM user_categories WHERE user_id = ? AND global_category_id = ?", userID, globalID)
 	if err != nil {
 		return err
 	}
 
-	// Удаляем локальную категорию
 	_, err = r.db.Exec("DELETE FROM categories WHERE id = ? AND user_id = ?", id, userID)
 	return err
 }
@@ -518,16 +529,19 @@ func (r *SQLiteRepository) AddTransaction(userID int, t Transaction) (int, error
 		return 0, fmt.Errorf("insert trans: %w", err)
 	}
 	id, _ := res.LastInsertId()
-	// Обновляем активность пользователя при добавлении транзакции
 	r.UpdateUserActivity(userID, time.Now())
 	return int(id), nil
 }
 
 func (r *SQLiteRepository) GetTransactionsByPeriod(userID int, start, end time.Time) ([]Transaction, error) {
-	rows, err := r.db.Query(
-		"SELECT id, amount, category_id, date, payment_method, comment FROM transactions WHERE user_id = ? AND date >= ? AND date < ? ORDER BY date DESC",
-		userID, start.Format(time.RFC3339), end.Format(time.RFC3339),
-	)
+	rows, err := r.db.Query(`
+        SELECT t.id, t.amount, t.category_id, t.date, t.payment_method, t.comment, 
+               c.name as category_name
+        FROM transactions t
+        LEFT JOIN categories c ON t.category_id = c.id AND c.user_id = t.user_id
+        WHERE t.user_id = ? AND t.date >= ? AND t.date < ?
+        ORDER BY t.date DESC`,
+		userID, start.Format(time.RFC3339), end.Format(time.RFC3339))
 	if err != nil {
 		return nil, fmt.Errorf("query trans: %w", err)
 	}
@@ -537,11 +551,18 @@ func (r *SQLiteRepository) GetTransactionsByPeriod(userID int, start, end time.T
 	for rows.Next() {
 		var t Transaction
 		var ds string
-		if err := rows.Scan(&t.ID, &t.Amount, &t.CategoryID, &ds, &t.PaymentMethod, &t.Comment); err != nil {
+		var categoryName sql.NullString
+		if err := rows.Scan(&t.ID, &t.Amount, &t.CategoryID, &ds,
+			&t.PaymentMethod, &t.Comment, &categoryName); err != nil {
 			return nil, fmt.Errorf("scan trans: %w", err)
 		}
 		t.Date, _ = time.Parse(time.RFC3339, ds)
 		t.UserID = userID
+		if categoryName.Valid {
+			t.CategoryName = categoryName.String
+		} else {
+			t.CategoryName = "Неизвестно"
+		}
 		res = append(res, t)
 	}
 	return res, nil

@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/IlyaMakar/finance_bot/internal/repository"
@@ -28,7 +29,18 @@ func (s *FinanceService) RenameCategory(id int, newName string) error {
 }
 
 func (s *FinanceService) GetCategories() ([]repository.Category, error) {
-	return s.repo.GetCategories(s.userID)
+	cats, err := s.repo.GetCategories(s.userID)
+	if err != nil {
+		return nil, fmt.Errorf("не удалось получить категории: %v", err)
+	}
+
+	if len(cats) == 0 {
+		log.Printf("Для пользователя %d категории не найдены, создаем базовые", s.userID)
+	} else {
+		log.Printf("Найдено %d категорий для пользователя %d", len(cats), s.userID)
+	}
+
+	return cats, nil
 }
 
 func (s *FinanceService) CreateCategory(name, typ string, parent *int) (int, error) {
@@ -63,7 +75,24 @@ func (s *FinanceService) AddTransaction(amount float64, categoryID int, method, 
 }
 
 func (s *FinanceService) GetTransactionsForPeriod(start, end time.Time) ([]repository.Transaction, error) {
-	return s.repo.GetTransactionsByPeriod(s.userID, start, end)
+	transactions, err := s.repo.GetTransactionsByPeriod(s.userID, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("не удалось получить транзакции: %v", err)
+	}
+
+	for i := range transactions {
+		if transactions[i].CategoryName == "" {
+			if cat, err := s.repo.GetCategoryByID(s.userID, transactions[i].CategoryID); err == nil {
+				transactions[i].CategoryName = cat.Name
+			} else {
+				transactions[i].CategoryName = "Неизвестно"
+				log.Printf("Категория с ID %d не найдена для транзакции %d",
+					transactions[i].CategoryID, transactions[i].ID)
+			}
+		}
+	}
+
+	return transactions, nil
 }
 
 func (s *FinanceService) GetSavings() ([]repository.Saving, error) {
