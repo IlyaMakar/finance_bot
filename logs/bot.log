@@ -657,3 +657,24 @@ INFO 2025/07/24 10:46:30 logger.go:49: BTN @LONEl1st: settings_back
 INFO 2025/07/24 10:46:31 logger.go:49: BTN @LONEl1st: confirm_clear_data
 INFO 2025/07/24 10:46:32 logger.go:49: BTN @LONEl1st: clear_data
 INFO 2025/07/24 10:46:38 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/07/24 10:52:42 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/07/24 10:53:10 logger.go:38: CMD @LONEl1st: Получено сообщение: /start
+INFO 2025/07/24 10:53:10 logger.go:38: CMD @LONEl1st: Команда /start
+INFO 2025/07/24 10:53:11 logger.go:49: BTN @LONEl1st: saving_tips
+INFO 2025/07/24 10:53:13 logger.go:38: CMD @LONEl1st: Получено сообщение: ➕ Добавить операцию
+INFO 2025/07/24 10:53:13 logger.go:38: CMD @LONEl1st: Кнопка: Добавить операцию
+INFO 2025/07/24 10:53:14 logger.go:49: BTN @LONEl1st: type_income
+INFO 2025/07/24 10:53:15 logger.go:49: BTN @LONEl1st: cat_121
+INFO 2025/07/24 10:53:17 logger.go:38: CMD @LONEl1st: Получено сообщение: 12312
+INFO 2025/07/24 10:53:17 logger.go:38: CMD @LONEl1st: Текст сообщения: 12312
+INFO 2025/07/24 10:53:18 logger.go:49: BTN @LONEl1st: skip_comment
+INFO 2025/07/24 10:54:36 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/07/24 10:56:40 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/07/24 10:56:46 logger.go:38: CMD @LONEl1st: Получено сообщение: ➕ Добавить операцию
+INFO 2025/07/24 10:56:46 logger.go:38: CMD @LONEl1st: Кнопка: Добавить операцию
+INFO 2025/07/24 10:56:47 logger.go:49: BTN @LONEl1st: type_income
+INFO 2025/07/24 10:56:50 logger.go:49: BTN @LONEl1st: cat_23
+INFO 2025/07/24 10:56:52 logger.go:38: CMD @LONEl1st: Получено сообщение: 123
+INFO 2025/07/24 10:56:52 logger.go:38: CMD @LONEl1st: Текст сообщения: 123
+INFO 2025/07/24 10:56:54 logger.go:49: BTN @LONEl1st: skip_comment
+INFO 2025/07/24 10:58:01 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
