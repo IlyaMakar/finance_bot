@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/IlyaMakar/finance_bot/internal/logger"
 	"github.com/IlyaMakar/finance_bot/internal/repository"
 	"github.com/IlyaMakar/finance_bot/internal/service"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -98,34 +99,43 @@ func (b *Bot) showSavingsManagement(chatID int64, svc *service.FinanceService) {
 	b.send(chatID, msg)
 }
 
-func (b *Bot) showSavingActions(chatID int64, savingID int, messageID int, svc *service.FinanceService) {
+func (b *Bot) showSavingActions(chatID int64, savingID int, svc *service.FinanceService) {
 	saving, err := svc.GetSavingByID(savingID)
 	if err != nil {
-		b.sendError(chatID, err)
+		b.sendError(chatID, fmt.Errorf("не удалось получить копилку: %v", err))
 		return
 	}
 
-	msgText := fmt.Sprintf("✏️ <b>Копилка:</b> %s\n<b>Текущая сумма:</b> %.2f ₽", saving.Name, saving.Amount)
+	msgText := fmt.Sprintf("📌 <b>%s</b>\nТекущая сумма: %.2f ₽", saving.Name, saving.Amount)
 	if saving.Goal != nil {
-		msgText += fmt.Sprintf("\n<b>Цель:</b> %.2f ₽", *saving.Goal)
+		progress := saving.Progress()
+		msgText += fmt.Sprintf("\nЦель: %.2f ₽ (%.1f%%)", *saving.Goal, progress)
 	}
-	msgText += "\n\nВыберите действие:"
+	if saving.Comment != "" {
+		msgText += fmt.Sprintf("\nКомментарий: %s", saving.Comment)
+	}
 
 	msg := tgbotapi.NewMessage(chatID, msgText)
 	msg.ParseMode = "HTML"
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("✏️ Переименовать", CallbackRenameSaving+strconv.Itoa(savingID)),
-			tgbotapi.NewInlineKeyboardButtonData("🧹 Очистить", CallbackClearSaving+strconv.Itoa(savingID)),
+			tgbotapi.NewInlineKeyboardButtonData("➕ Пополнить", fmt.Sprintf("saving_add_%d", savingID)),
+			tgbotapi.NewInlineKeyboardButtonData("➖ Снять", fmt.Sprintf("saving_withdraw_%d", savingID)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🗑️ Удалить", CallbackDeleteSaving+strconv.Itoa(savingID)),
+			tgbotapi.NewInlineKeyboardButtonData("✏️ Переименовать", fmt.Sprintf("saving_rename_%d", savingID)),
+			tgbotapi.NewInlineKeyboardButtonData("🗑 Удалить", fmt.Sprintf("saving_delete_%d", savingID)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "manage_savings"),
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "savings_list"),
 		),
 	)
-	b.send(chatID, msg)
+
+	if _, err := b.bot.Send(msg); err != nil {
+		logger.LogError(chatID, fmt.Sprintf("Ошибка отправки сообщения showSavingActions: %v", err))
+		b.sendError(chatID, err)
+		return
+	}
 }
 
 func (b *Bot) handleDeleteSaving(chatID int64, savingID int, messageID int, svc *service.FinanceService) {
@@ -568,6 +578,7 @@ func (b *Bot) showYearlyReport(chatID int64, svc *service.FinanceService) {
 func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, start, end time.Time, periodName string) {
 	trans, err := svc.GetTransactionsForPeriod(start, end)
 	if err != nil {
+		logger.LogError(chatID, fmt.Sprintf("Ошибка получения транзакций для отчета: %v", err))
 		b.sendError(chatID, err)
 		return
 	}
@@ -592,55 +603,93 @@ func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, st
 		}
 	}
 
-	msgText := fmt.Sprintf("📊 <b>Статистика за %s</b>\n\n", periodName)
+	// Формируем текст отчета
+	msgText := strings.Builder{}
+	msgText.WriteString(fmt.Sprintf("📊 <b>Статистика за %s</b>\n\n", periodName))
 
-	msgText += fmt.Sprintf("📈 <b>Доходы:</b> %.2f ₽\n", totalIncome)
-	for cat, amount := range incomeDetails {
-		msgText += fmt.Sprintf("┣ %s: %.2f ₽\n", cat, amount)
-	}
-
-	msgText += fmt.Sprintf("\n📉 <b>Расходы:</b> %.2f ₽\n", totalExpense)
-	if totalExpense > 0 {
-		sortedCategories := b.sortCategoriesByAmount(expenseDetails)
-
-		for _, cat := range sortedCategories {
-			amount := expenseDetails[cat]
-			percentage := (amount / totalExpense) * 100
-			msgText += fmt.Sprintf("┣ %s: %.2f ₽ (%.1f%%)\n",
-				cat, amount, percentage)
+	// Доходы
+	msgText.WriteString(fmt.Sprintf("📈 <b>Доходы:</b> %.2f ₽\n", totalIncome))
+	if len(incomeDetails) == 0 {
+		msgText.WriteString("┣ Нет доходов\n")
+	} else {
+		for cat, amount := range incomeDetails {
+			if cat == "" {
+				cat = "Неизвестно"
+			}
+			msgText.WriteString(fmt.Sprintf("┣ %s: %.2f ₽\n", cat, amount))
 		}
 	}
 
-	msgText += fmt.Sprintf("\n💵 <b>Баланс:</b> %.2f ₽", totalIncome-totalExpense)
+	// Расходы
+	msgText.WriteString(fmt.Sprintf("\n📉 <b>Расходы:</b> %.2f ₽\n", totalExpense))
+	if len(expenseDetails) == 0 {
+		msgText.WriteString("┣ Нет расходов\n")
+	} else {
+		sortedCategories := sortCategoriesByAmount(expenseDetails)
+		for _, cat := range sortedCategories {
+			if cat == "" {
+				cat = "Неизвестно"
+			}
+			amount := expenseDetails[cat]
+			percentage := 0.0
+			if totalExpense > 0 {
+				percentage = (amount / totalExpense) * 100
+			}
+			msgText.WriteString(fmt.Sprintf("┣ %s: %.2f ₽ (%.1f%%)\n", cat, amount, percentage))
+		}
+	}
 
-	msg := tgbotapi.NewMessage(chatID, msgText)
+	// Баланс
+	msgText.WriteString(fmt.Sprintf("\n💵 <b>Баланс:</b> %.2f ₽", totalIncome-totalExpense))
+
+	// Проверяем длину сообщения
+	finalMsg := msgText.String()
+	if len(finalMsg) > 4096 {
+		logger.LogError(chatID, "Длина сообщения статистики превышает лимит Telegram (4096 символов)")
+		b.sendError(chatID, fmt.Errorf("отчет слишком длинный, попробуйте выбрать меньший период"))
+		return
+	}
+
+	// Отправляем сообщение
+	msg := tgbotapi.NewMessage(chatID, finalMsg)
 	msg.ParseMode = "HTML"
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("◀️ К выбору периода", "stats_back"),
+			tgbotapi.NewInlineKeyboardButtonData("📤 Выгрузить отчет", fmt.Sprintf("export_report_%s_%s",
+				start.Format("2006-01-02"),
+				end.Format("2006-01-02"))),
 		),
 	)
-	b.send(chatID, msg)
-}
 
-func (b *Bot) sortCategoriesByAmount(categories map[string]float64) []string {
-	type categoryAmount struct {
-		name   string
-		amount float64
+	if _, err := b.bot.Send(msg); err != nil {
+		logger.LogError(chatID, fmt.Sprintf("Ошибка отправки сообщения статистики: %v", err))
+		b.sendError(chatID, fmt.Errorf("не удалось отправить отчет: %v", err))
+		return
 	}
 
-	var sorted []categoryAmount
-	for name, amount := range categories {
-		sorted = append(sorted, categoryAmount{name, amount})
+	logger.LogButtonClickByID(chatID, fmt.Sprintf("Статистика за %s", periodName))
+}
+
+// sortCategoriesByAmount сортирует категории по сумме
+func sortCategoriesByAmount(details map[string]float64) []string {
+	type kv struct {
+		Key   string
+		Value float64
+	}
+
+	var sorted []kv
+	for k, v := range details {
+		sorted = append(sorted, kv{k, v})
 	}
 
 	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].amount > sorted[j].amount
+		return sorted[i].Value > sorted[j].Value
 	})
 
 	result := make([]string, len(sorted))
-	for i, item := range sorted {
-		result[i] = item.name
+	for i, kv := range sorted {
+		result[i] = kv.Key
 	}
 	return result
 }

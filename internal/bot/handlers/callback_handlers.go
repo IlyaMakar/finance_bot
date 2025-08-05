@@ -28,6 +28,55 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		b.sendError(chatID, err)
 		return
 	}
+	if strings.HasPrefix(data, "export_report_") {
+		parts := strings.Split(data, "_")
+		if len(parts) != 4 {
+			b.sendError(chatID, fmt.Errorf("неверный формат даты"))
+			return
+		}
+
+		start, err := time.Parse("2006-01-02", parts[2])
+		if err != nil {
+			b.sendError(chatID, fmt.Errorf("ошибка парсинга даты начала"))
+			return
+		}
+
+		end, err := time.Parse("2006-01-02", parts[3])
+		if err != nil {
+			b.sendError(chatID, fmt.Errorf("ошибка парсинга даты окончания"))
+			return
+		}
+
+		user, err := b.repo.GetOrCreateUser(
+			q.From.ID,
+			q.From.UserName,
+			q.From.FirstName,
+			q.From.LastName,
+		)
+		if err != nil {
+			b.sendError(chatID, err)
+			return
+		}
+		svc := service.NewService(b.repo, user)
+
+		// Создаем отчет
+		pdfData, err := b.reportGen.GeneratePDFReport(chatID, start, end, svc)
+		if err != nil {
+			b.sendError(chatID, fmt.Errorf("ошибка генерации отчета"))
+			return
+		}
+
+		// Отправляем отчет пользователю
+		file := tgbotapi.FileBytes{
+			Name:  fmt.Sprintf("Отчет_%s_%s.pdf", start.Format("02.01.2006"), end.Format("02.01.2006")),
+			Bytes: pdfData,
+		}
+		doc := tgbotapi.NewDocument(chatID, file)
+		b.send(chatID, doc)
+
+		return
+	}
+
 	if err := b.repo.UpdateUserActivity(user.ID, time.Now()); err != nil {
 		logger.LogError(q.From.UserName, fmt.Sprintf("Ошибка обновления активности: %v", err))
 	}
@@ -46,7 +95,7 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 
 	if strings.HasPrefix(data, CallbackEditSaving) {
 		savingID, _ := strconv.Atoi(data[len(CallbackEditSaving):])
-		b.showSavingActions(q.From.ID, savingID, q.Message.MessageID, svc)
+		b.showSavingActions(q.From.ID, savingID, svc)
 		return
 	}
 

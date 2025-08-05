@@ -23,8 +23,9 @@ const (
 )
 
 type Bot struct {
-	bot  *tgbotapi.BotAPI
-	repo *repository.SQLiteRepository
+	bot       *tgbotapi.BotAPI
+	repo      *repository.SQLiteRepository
+	reportGen *ReportGenerator
 }
 
 type UserState struct {
@@ -44,7 +45,13 @@ func NewBot(token string, repo *repository.SQLiteRepository) (*Bot, error) {
 		return nil, err
 	}
 
-	return &Bot{bot: botAPI, repo: repo}, nil
+	bot := &Bot{
+		bot:  botAPI,
+		repo: repo,
+	}
+	bot.reportGen = NewReportGenerator(bot, repo) // Передаем сам Bot, а не botAPI
+
+	return bot, nil
 }
 
 func (b *Bot) GetRepo() *repository.SQLiteRepository {
