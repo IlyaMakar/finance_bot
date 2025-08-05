@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"fmt"
+	"image/color"
 	"os"
 	"path/filepath"
 	"sort"
@@ -55,6 +56,7 @@ func (rg *ReportGenerator) GeneratePDFReport(chatID int64, start, end time.Time,
 		expenseDetails            = make(map[string]float64)
 		incomeTrend               []chart.Value
 		expenseTrend              []chart.Value
+		balanceTrend              []chart.Value
 		balanceByDate             = make(map[string]float64)
 	)
 
@@ -83,16 +85,21 @@ func (rg *ReportGenerator) GeneratePDFReport(chatID int64, start, end time.Time,
 	}
 	sort.Strings(dateList)
 
-	var incomeSum, expenseSum float64
-	for _, d := range dateList {
-		balance := balanceByDate[d]
-		if balance > 0 {
-			incomeSum += balance
-			incomeTrend = append(incomeTrend, chart.Value{Label: d, Value: incomeSum})
+	var (
+		incomeSum, expenseSum, balanceSum float64
+	)
+	for i, d := range dateList {
+		dayBalance := balanceByDate[d]
+		if dayBalance > 0 {
+			incomeSum += dayBalance
 		} else {
-			expenseSum += -balance
-			expenseTrend = append(expenseTrend, chart.Value{Label: d, Value: expenseSum})
+			expenseSum += -dayBalance
 		}
+		balanceSum += dayBalance
+		incomeTrend = append(incomeTrend, chart.Value{Label: d, Value: incomeSum})
+		expenseTrend = append(expenseTrend, chart.Value{Label: d, Value: expenseSum})
+		balanceTrend = append(balanceTrend, chart.Value{Label: d, Value: balanceSum})
+		_ = i
 	}
 
 	pdf.SetFont("DejaVuSans", "B", 16)
@@ -104,33 +111,43 @@ func (rg *ReportGenerator) GeneratePDFReport(chatID int64, start, end time.Time,
 	pdf.Ln(10)
 
 	startY := pdf.GetY()
-	incomeLine, _ := rg.generateLineChart(incomeTrend, "Доходы", drawing.ColorFromHex("5A9BD5"))
-	expenseLine, _ := rg.generateLineChart(expenseTrend, "Расходы", drawing.ColorFromHex("ED7D31"))
-	rg.addImageToPDF(pdf, incomeLine, "", 10, startY, 90, 50)
-	rg.addImageToPDF(pdf, expenseLine, "", 110, startY, 90, 50)
-	pdf.SetY(startY + 55)
+	incomeLine, _ := rg.generateLineChart(incomeTrend, drawing.ColorFromHex("5A9BD5"))
+	expenseLine, _ := rg.generateLineChart(expenseTrend, drawing.ColorFromHex("ED7D31"))
+	rg.addImageToPDF(pdf, incomeLine, "Доходы", 10, startY, 90, 45)
+	rg.addImageToPDF(pdf, expenseLine, "Расходы", 110, startY, 90, 45)
+
+	pdf.SetY(startY + 50)
+	balanceLine, _ := rg.generateLineChart(balanceTrend, drawing.ColorFromHex("70AD47"))
+	rg.addImageToPDF(pdf, balanceLine, "Баланс", 10, pdf.GetY(), 190, 45)
+
+	pdf.SetY(pdf.GetY() + 50)
 	pdf.Ln(5)
 
 	pdf.SetFont("DejaVuSans", "B", 14)
 	pdf.CellFormat(190, 10, "Распределение по категориям", "", 1, "L", false, 0, "")
 	pdf.Ln(3)
 
+	yStart := pdf.GetY()
+
 	if len(incomeDetails) > 0 {
-		incomeChart, legend := rg.generatePieWithLegend(incomeDetails, drawing.ColorFromHex("5A9BD5"))
-		rg.addImageToPDF(pdf, incomeChart, "Доходы", 10, pdf.GetY(), 90, 60)
-		rg.addLegend(pdf, legend, 10, pdf.GetY()+62)
+		incomeChart, legendIncome, colorsIncome := rg.generatePieWithLegend(incomeDetails)
+		rg.addImageToPDF(pdf, incomeChart, "Доходы", 10, yStart, 90, 60)
+		rg.addLegendWithColor(pdf, legendIncome, colorsIncome, 10, yStart+62)
 	}
 
 	if len(expenseDetails) > 0 {
-		expenseChart, legend := rg.generatePieWithLegend(expenseDetails, drawing.ColorFromHex("ED7D31"))
-		rg.addImageToPDF(pdf, expenseChart, "Расходы", 110, pdf.GetY()-62, 90, 60)
-		rg.addLegend(pdf, legend, 110, pdf.GetY()+2)
+		expenseChart, legendExpense, colorsExpense := rg.generatePieWithLegend(expenseDetails)
+		rg.addImageToPDF(pdf, expenseChart, "Расходы", 110, yStart, 90, 60)
+		rg.addLegendWithColor(pdf, legendExpense, colorsExpense, 110, yStart+62)
 	}
-	pdf.Ln(70)
+
+	pdf.SetY(yStart + 90)
+	pdf.Ln(10)
 
 	pdf.SetFont("DejaVuSans", "B", 14)
 	pdf.CellFormat(190, 10, "Детализация по категориям", "", 1, "L", false, 0, "")
 	pdf.SetFont("DejaVuSans", "", 12)
+	pdf.Ln(3)
 
 	if len(incomeDetails) > 0 {
 		pdf.CellFormat(190, 8, "Доходы:", "", 1, "L", false, 0, "")
@@ -139,6 +156,7 @@ func (rg *ReportGenerator) GeneratePDFReport(chatID int64, start, end time.Time,
 		}
 		pdf.Ln(5)
 	}
+
 	if len(expenseDetails) > 0 {
 		pdf.CellFormat(190, 8, "Расходы:", "", 1, "L", false, 0, "")
 		for _, cat := range sortedKeys(expenseDetails) {
@@ -150,10 +168,11 @@ func (rg *ReportGenerator) GeneratePDFReport(chatID int64, start, end time.Time,
 	if err := pdf.Output(&buf); err != nil {
 		return nil, fmt.Errorf("ошибка генерации PDF: %v", err)
 	}
+
 	return buf.Bytes(), nil
 }
 
-func (rg *ReportGenerator) generateLineChart(data []chart.Value, title string, lineColor drawing.Color) ([]byte, error) {
+func (rg *ReportGenerator) generateLineChart(data []chart.Value, color drawing.Color) ([]byte, error) {
 	graph := chart.Chart{
 		Width:  600,
 		Height: 200,
@@ -161,11 +180,10 @@ func (rg *ReportGenerator) generateLineChart(data []chart.Value, title string, l
 		YAxis:  chart.YAxis{Style: chart.Style{FontSize: 8}},
 		Series: []chart.Series{
 			chart.ContinuousSeries{
-				Name:    title,
 				XValues: extractX(data),
 				YValues: extractY(data),
 				Style: chart.Style{
-					StrokeColor: lineColor,
+					StrokeColor: color,
 					FillColor:   drawing.ColorTransparent,
 				},
 			},
@@ -176,9 +194,11 @@ func (rg *ReportGenerator) generateLineChart(data []chart.Value, title string, l
 	return buf.Bytes(), err
 }
 
-func (rg *ReportGenerator) generatePieWithLegend(data map[string]float64, baseColor drawing.Color) ([]byte, []string) {
+func (rg *ReportGenerator) generatePieWithLegend(data map[string]float64) ([]byte, []string, []color.Color) {
 	var values []chart.Value
 	var legend []string
+	var colors []color.Color
+
 	keys := sortedKeys(data)
 	total := 0.0
 	for _, v := range data {
@@ -187,13 +207,16 @@ func (rg *ReportGenerator) generatePieWithLegend(data map[string]float64, baseCo
 	for i, k := range keys {
 		val := data[k]
 		percent := val / total * 100
-		legend = append(legend, fmt.Sprintf("%s – %.2f ₽ (%.0f%%)", k, val, percent))
+		c := chart.GetDefaultColor(i)
 		values = append(values, chart.Value{
 			Value: val,
 			Label: "",
-			Style: chart.Style{FillColor: chart.GetDefaultColor(i)},
+			Style: chart.Style{FillColor: c},
 		})
+		legend = append(legend, fmt.Sprintf("%s – %.2f ₽ (%.0f%%)", k, val, percent))
+		colors = append(colors, c)
 	}
+
 	graph := chart.PieChart{
 		Width:  300,
 		Height: 200,
@@ -201,13 +224,17 @@ func (rg *ReportGenerator) generatePieWithLegend(data map[string]float64, baseCo
 	}
 	var buf bytes.Buffer
 	graph.Render(chart.PNG, &buf)
-	return buf.Bytes(), legend
+	return buf.Bytes(), legend, colors
 }
 
-func (rg *ReportGenerator) addLegend(pdf *gofpdf.Fpdf, items []string, x, y float64) {
+func (rg *ReportGenerator) addLegendWithColor(pdf *gofpdf.Fpdf, items []string, colors []color.Color, x, y float64) {
 	pdf.SetXY(x, y)
 	pdf.SetFont("DejaVuSans", "", 10)
-	for _, item := range items {
+	for i, item := range items {
+		r, g, b, _ := colors[i].RGBA()
+		pdf.SetFillColor(int(r>>8), int(g>>8), int(b>>8))
+		pdf.Rect(x, pdf.GetY(), 4, 4, "F")
+		pdf.SetXY(x+6, pdf.GetY()-1)
 		pdf.CellFormat(90, 5, item, "", 1, "L", false, 0, "")
 	}
 }
