@@ -1,3 +1,4 @@
+// internal/bot/handlers/report_generator.go
 package handlers
 
 import (
@@ -85,10 +86,8 @@ func (rg *ReportGenerator) GeneratePDFReport(chatID int64, start, end time.Time,
 	}
 	sort.Strings(dateList)
 
-	var (
-		incomeSum, expenseSum, balanceSum float64
-	)
-	for i, d := range dateList {
+	var incomeSum, expenseSum, balanceSum float64
+	for _, d := range dateList {
 		dayBalance := balanceByDate[d]
 		if dayBalance > 0 {
 			incomeSum += dayBalance
@@ -99,9 +98,9 @@ func (rg *ReportGenerator) GeneratePDFReport(chatID int64, start, end time.Time,
 		incomeTrend = append(incomeTrend, chart.Value{Label: d, Value: incomeSum})
 		expenseTrend = append(expenseTrend, chart.Value{Label: d, Value: expenseSum})
 		balanceTrend = append(balanceTrend, chart.Value{Label: d, Value: balanceSum})
-		_ = i
 	}
 
+	// === Общая статистика ===
 	pdf.SetFont("DejaVuSans", "B", 16)
 	pdf.CellFormat(190, 10, "Общая статистика", "", 1, "L", false, 0, "")
 	pdf.SetFont("DejaVuSans", "", 12)
@@ -113,16 +112,17 @@ func (rg *ReportGenerator) GeneratePDFReport(chatID int64, start, end time.Time,
 	startY := pdf.GetY()
 	incomeLine, _ := rg.generateLineChart(incomeTrend, drawing.ColorFromHex("5A9BD5"))
 	expenseLine, _ := rg.generateLineChart(expenseTrend, drawing.ColorFromHex("ED7D31"))
-	rg.addImageToPDF(pdf, incomeLine, "Доходы", 10, startY, 90, 45)
-	rg.addImageToPDF(pdf, expenseLine, "Расходы", 110, startY, 90, 45)
+	rg.addImageToPDF(pdf, incomeLine, "", 10, startY, 90, 45)
+	rg.addImageToPDF(pdf, expenseLine, "", 110, startY, 90, 45)
 
 	pdf.SetY(startY + 50)
 	balanceLine, _ := rg.generateLineChart(balanceTrend, drawing.ColorFromHex("70AD47"))
-	rg.addImageToPDF(pdf, balanceLine, "Баланс", 10, pdf.GetY(), 190, 45)
+	rg.addImageToPDF(pdf, balanceLine, "", 10, pdf.GetY(), 190, 45)
 
 	pdf.SetY(pdf.GetY() + 50)
 	pdf.Ln(5)
 
+	// === Круговые диаграммы ===
 	pdf.SetFont("DejaVuSans", "B", 14)
 	pdf.CellFormat(190, 10, "Распределение по категориям", "", 1, "L", false, 0, "")
 	pdf.Ln(3)
@@ -131,38 +131,53 @@ func (rg *ReportGenerator) GeneratePDFReport(chatID int64, start, end time.Time,
 
 	if len(incomeDetails) > 0 {
 		incomeChart, legendIncome, colorsIncome := rg.generatePieWithLegend(incomeDetails)
-		rg.addImageToPDF(pdf, incomeChart, "Доходы", 10, yStart, 90, 60)
+		rg.addImageToPDF(pdf, incomeChart, "", 10, yStart, 90, 60)
 		rg.addLegendWithColor(pdf, legendIncome, colorsIncome, 10, yStart+62)
 	}
 
 	if len(expenseDetails) > 0 {
 		expenseChart, legendExpense, colorsExpense := rg.generatePieWithLegend(expenseDetails)
-		rg.addImageToPDF(pdf, expenseChart, "Расходы", 110, yStart, 90, 60)
+		rg.addImageToPDF(pdf, expenseChart, "", 110, yStart, 90, 60)
 		rg.addLegendWithColor(pdf, legendExpense, colorsExpense, 110, yStart+62)
 	}
 
 	pdf.SetY(yStart + 90)
 	pdf.Ln(10)
 
+	// === Детализация по категориям (таблица) ===
 	pdf.SetFont("DejaVuSans", "B", 14)
 	pdf.CellFormat(190, 10, "Детализация по категориям", "", 1, "L", false, 0, "")
-	pdf.SetFont("DejaVuSans", "", 12)
+	pdf.SetFont("DejaVuSans", "", 11)
 	pdf.Ln(3)
 
 	if len(incomeDetails) > 0 {
-		pdf.CellFormat(190, 8, "Доходы:", "", 1, "L", false, 0, "")
+		pdf.CellFormat(190, 7, "Доходы:", "", 1, "L", false, 0, "")
+		total := sum(incomeDetails)
 		for _, cat := range sortedKeys(incomeDetails) {
-			pdf.CellFormat(190, 6, fmt.Sprintf("- %s: %.2f ₽", cat, incomeDetails[cat]), "", 1, "L", false, 0, "")
+			amount := incomeDetails[cat]
+			percent := amount / total * 100
+			pdf.CellFormat(190, 6, fmt.Sprintf("  • %-20s %.2f ₽ (%.0f%%)", cat, amount, percent), "", 1, "L", false, 0, "")
 		}
-		pdf.Ln(5)
+		pdf.Ln(4)
 	}
 
 	if len(expenseDetails) > 0 {
-		pdf.CellFormat(190, 8, "Расходы:", "", 1, "L", false, 0, "")
+		pdf.CellFormat(190, 7, "Расходы:", "", 1, "L", false, 0, "")
+		total := sum(expenseDetails)
 		for _, cat := range sortedKeys(expenseDetails) {
-			pdf.CellFormat(190, 6, fmt.Sprintf("- %s: %.2f ₽", cat, expenseDetails[cat]), "", 1, "L", false, 0, "")
+			amount := expenseDetails[cat]
+			percent := amount / total * 100
+			pdf.CellFormat(190, 6, fmt.Sprintf("  • %-20s %.2f ₽ (%.0f%%)", cat, amount, percent), "", 1, "L", false, 0, "")
 		}
 	}
+
+	pdf.Ln(10)
+
+	// === Автоанализ ===
+	pdf.SetFont("DejaVuSans", "B", 14)
+	pdf.CellFormat(190, 10, "Автоматический анализ", "", 1, "L", false, 0, "")
+	pdf.SetFont("DejaVuSans", "", 12)
+	pdf.MultiCell(190, 7, generateInsights(totalIncome, totalExpense, incomeDetails, expenseDetails), "", "L", false)
 
 	var buf bytes.Buffer
 	if err := pdf.Output(&buf); err != nil {
@@ -171,6 +186,8 @@ func (rg *ReportGenerator) GeneratePDFReport(chatID int64, start, end time.Time,
 
 	return buf.Bytes(), nil
 }
+
+// ====== Вспомогательные функции ниже (без изменений или с улучшениями) ======
 
 func (rg *ReportGenerator) generateLineChart(data []chart.Value, color drawing.Color) ([]byte, error) {
 	graph := chart.Chart{
@@ -200,28 +217,33 @@ func (rg *ReportGenerator) generatePieWithLegend(data map[string]float64) ([]byt
 	var colors []color.Color
 
 	keys := sortedKeys(data)
-	total := 0.0
-	for _, v := range data {
-		total += v
-	}
+	total := sum(data)
+
 	for i, k := range keys {
 		val := data[k]
 		percent := val / total * 100
 		c := chart.GetDefaultColor(i)
 		values = append(values, chart.Value{
 			Value: val,
-			Label: "",
+			Label: "", // убрать метки — легенда отдельно
 			Style: chart.Style{FillColor: c},
 		})
 		legend = append(legend, fmt.Sprintf("%s – %.2f ₽ (%.0f%%)", k, val, percent))
 		colors = append(colors, c)
 	}
 
-	graph := chart.PieChart{
-		Width:  300,
-		Height: 200,
-		Values: values,
+	if len(values) == 1 {
+		values[0].Label = keys[0]
 	}
+
+	graph := chart.PieChart{
+		Width:      300,
+		Height:     200,
+		Values:     values,
+		Canvas:     chart.Style{Padding: chart.Box{Top: 2, Left: 2, Right: 2, Bottom: 2}},
+		Background: chart.Style{Padding: chart.BoxZero},
+	}
+
 	var buf bytes.Buffer
 	graph.Render(chart.PNG, &buf)
 	return buf.Bytes(), legend, colors
@@ -229,7 +251,7 @@ func (rg *ReportGenerator) generatePieWithLegend(data map[string]float64) ([]byt
 
 func (rg *ReportGenerator) addLegendWithColor(pdf *gofpdf.Fpdf, items []string, colors []color.Color, x, y float64) {
 	pdf.SetXY(x, y)
-	pdf.SetFont("DejaVuSans", "", 10)
+	pdf.SetFont("DejaVuSans", "", 9)
 	for i, item := range items {
 		r, g, b, _ := colors[i].RGBA()
 		pdf.SetFillColor(int(r>>8), int(g>>8), int(b>>8))
@@ -247,11 +269,6 @@ func (rg *ReportGenerator) addImageToPDF(pdf *gofpdf.Fpdf, img []byte, title str
 	defer os.Remove(tmpfile.Name())
 	tmpfile.Write(img)
 	tmpfile.Close()
-	if title != "" {
-		pdf.SetFont("DejaVuSans", "B", 12)
-		pdf.SetXY(x, y-6)
-		pdf.CellFormat(w, 6, title, "", 0, "C", false, 0, "")
-	}
 	options := gofpdf.ImageOptions{ImageType: "PNG"}
 	pdf.RegisterImageOptions(tmpfile.Name(), options)
 	pdf.ImageOptions(tmpfile.Name(), x, y, w, h, false, options, 0, "")
@@ -282,6 +299,14 @@ func extractY(data []chart.Value) []float64 {
 	return ys
 }
 
+func sum(m map[string]float64) float64 {
+	var total float64
+	for _, v := range m {
+		total += v
+	}
+	return total
+}
+
 func removeEmoji(text string) string {
 	var b strings.Builder
 	for _, r := range text {
@@ -290,4 +315,35 @@ func removeEmoji(text string) string {
 		}
 	}
 	return strings.TrimSpace(b.String())
+}
+
+func generateInsights(income, expense float64, incomeCat, expenseCat map[string]float64) string {
+	balance := income - expense
+	direction := "Положительный"
+	if balance < 0 {
+		direction = "Отрицательный"
+	}
+
+	topIncome := topCategory(incomeCat)
+	topExpense := topCategory(expenseCat)
+
+	return fmt.Sprintf(
+		"Ваш баланс за период составил: %.2f ₽ (%s).\n"+
+			"Основной источник дохода: %s.\n"+
+			"Основная статья расходов: %s.\n"+
+			"Рекомендуем обратить внимание на контроль расходов в наиболее активной категории.",
+		balance, direction, topIncome, topExpense,
+	)
+}
+
+func topCategory(data map[string]float64) string {
+	var max float64
+	var name string
+	for k, v := range data {
+		if v > max {
+			max = v
+			name = k
+		}
+	}
+	return name
 }
