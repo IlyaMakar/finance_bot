@@ -40,7 +40,7 @@ Go 1.21+
 
 SQLite3
 
-bash
+
 
 # 1. Клонируйте репозиторий
 
@@ -61,8 +61,9 @@ TELEGRAM_TOKEN=your_bot_token
 TIMEZONE=Europe/Moscow # Часовой пояс для напоминаний
 TEST_MODE=false # Режим тестирования
 
-🏗 Архитектура проекта
-text
+
+## 🏗 Архитектура проекта
+```text
 finance_bot/
 ├── cmd/
 │ └── bot/ # Точка входа (main.go)
@@ -75,10 +76,10 @@ finance_bot/
 │ └── logger/ # Система логирования
 ├── go.mod # Зависимости
 └── README.md # Документация
-
-📌 Примеры использования
+``` 
+## 📌 Примеры использования
 Добавление операций
-https://example.com/add-operation.png
+
 
 Просмотр статистики
 📊 Статистика за месяц:
@@ -92,21 +93,20 @@ https://example.com/add-operation.png
 2. Транспорт: 8,200 ₽
 
 ## 🤝 Как помочь проекту
+# Приветствуются contributions! Вот что можно улучшить:
+- Интеграция с банковскими API
+- Кастомные категории расходов
+- Экспорт в Excel/Google Sheets
 
-Приветствуются contributions! Вот что можно улучшить:
-•Интеграция с банковскими API
-•Кастомные категории расходов
-•Экспорт в Excel/Google Sheets
+# Порядок внесения изменений:
+- Создайте issue для обсуждения
+- Сделайте fork репозитория
+- Отправьте pull request
 
-Порядок внесения изменений:
-•Создайте issue для обсуждения
-•Сделайте fork репозитория
-•Отправьте pull request
-
-📜 Лицензия
+## 📜 Лицензия
 MIT License - подробности в файле LICENSE
 
-📩 Контакты
-Автор: Илья Макаров
-Telegram: @LONEl1st
-Issues: https://github.com/IlyaMakar/finance_bot/issues
+## 📩 Контакты
+- Автор: Илья Макаров
+- Telegram: @LONEl1st
+- Issues: https://github.com/IlyaMakar/finance_bot/issues
