@@ -20,6 +20,16 @@ const (
 	CallbackRenameSaving        = "rename_saving_"
 	CallbackClearSaving         = "clear_saving_"
 	CallbackManageSavings       = "manage_savings"
+	CallbackSetPeriodStart      = "set_period_start"
+	CallbackCurrencySettings    = "currency_settings"
+	CallbackSetCurrency         = "set_currency_"
+
+	CallbackWriteSupport = "write_support"
+	CallbackFAQ          = "faq"
+
+	CurrencyRUB = "RUB"
+	CurrencyUSD = "USD"
+	CurrencyEUR = "EUR"
 )
 
 type Bot struct {
@@ -49,7 +59,7 @@ func NewBot(token string, repo *repository.SQLiteRepository) (*Bot, error) {
 		bot:  botAPI,
 		repo: repo,
 	}
-	bot.reportGen = NewReportGenerator(bot, repo) // Передаем сам Bot, а не botAPI
+	bot.reportGen = NewReportGenerator(bot, repo)
 
 	return bot, nil
 }

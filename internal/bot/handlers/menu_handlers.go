@@ -56,17 +56,21 @@ func (b *Bot) startAddToSaving(chatID int64, svc *service.FinanceService) {
 
 func (b *Bot) createSavingsKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
+		[]tgbotapi.InlineKeyboardButton{
 			tgbotapi.NewInlineKeyboardButtonData("➕ Новая копилка", "create_saving"),
+		},
+		[]tgbotapi.InlineKeyboardButton{
 			tgbotapi.NewInlineKeyboardButtonData("💰 Пополнить", "add_to_saving"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
+		},
+		[]tgbotapi.InlineKeyboardButton{
 			tgbotapi.NewInlineKeyboardButtonData("📊 Статистика", "savings_stats"),
+		},
+		[]tgbotapi.InlineKeyboardButton{
 			tgbotapi.NewInlineKeyboardButtonData("✏️ Редактировать", "manage_savings"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
+		},
+		[]tgbotapi.InlineKeyboardButton{
 			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "main_menu"),
-		),
+		},
 	)
 }
 
@@ -106,10 +110,12 @@ func (b *Bot) showSavingActions(chatID int64, savingID int, svc *service.Finance
 		return
 	}
 
-	msgText := fmt.Sprintf("📌 <b>%s</b>\nТекущая сумма: %.2f ₽", saving.Name, saving.Amount)
+	formattedAmount := b.formatCurrency(saving.Amount, chatID)
+	msgText := fmt.Sprintf("📌 <b>%s</b>\nТекущая сумма: %s", saving.Name, formattedAmount)
 	if saving.Goal != nil {
 		progress := saving.Progress()
-		msgText += fmt.Sprintf("\nЦель: %.2f ₽ (%.1f%%)", *saving.Goal, progress)
+		formattedGoal := b.formatCurrency(*saving.Goal, chatID)
+		msgText += fmt.Sprintf("\nЦель: %s (%.1f%%)", formattedGoal, progress)
 	}
 	if saving.Comment != "" {
 		msgText += fmt.Sprintf("\nКомментарий: %s", saving.Comment)
@@ -254,16 +260,17 @@ func (b *Bot) showSavingTips(chatID int64) {
 func (b *Bot) showSettingsMenu(chatID int64) {
 	msg := tgbotapi.NewMessage(chatID, "⚙️ <b>Настройки</b>\n\nВыбери, что хочешь настроить:")
 	msg.ParseMode = "HTML"
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔔 Уведомления", "notification_settings"),
-			tgbotapi.NewInlineKeyboardButtonData("📝 Категории", "manage_categories"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🆘 Поддержка", "support"),
-			tgbotapi.NewInlineKeyboardButtonData("🧹 Очистить все данные", "confirm_clear_data"),
-		),
-	)
+
+	keyboard := [][]tgbotapi.InlineKeyboardButton{
+		{tgbotapi.NewInlineKeyboardButtonData("🔔 Уведомления", "notification_settings")},
+		{tgbotapi.NewInlineKeyboardButtonData("📝 Категории", "manage_categories")},
+		{tgbotapi.NewInlineKeyboardButtonData("📅 Период отчётов", "period_settings")},
+		{tgbotapi.NewInlineKeyboardButtonData("💱 Валюта", CallbackCurrencySettings)},
+		{tgbotapi.NewInlineKeyboardButtonData("🆘 Поддержка", "support")},
+		{tgbotapi.NewInlineKeyboardButtonData("🧹 Очистить все данные", "confirm_clear_data")},
+	}
+
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(keyboard...)
 	b.send(chatID, msg)
 }
 
@@ -290,13 +297,15 @@ func (b *Bot) showNotificationSettings(chatID int64) {
 		fmt.Sprintf("🔔 <b>Уведомления</b>\n\nТекущий статус: %s\n\nВыбери действие:", status))
 	msg.ParseMode = "HTML"
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
+		[]tgbotapi.InlineKeyboardButton{
 			tgbotapi.NewInlineKeyboardButtonData("🔔 Включить", "enable_notifications"),
+		},
+		[]tgbotapi.InlineKeyboardButton{
 			tgbotapi.NewInlineKeyboardButtonData("🔕 Отключить", "disable_notifications"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
+		},
+		[]tgbotapi.InlineKeyboardButton{
 			tgbotapi.NewInlineKeyboardButtonData("◀️ В меню", "settings_back"),
-		),
+		},
 	)
 	b.send(chatID, msg)
 }
@@ -334,21 +343,95 @@ func (b *Bot) showCategoryManagement(chatID int64, svc *service.FinanceService) 
 func (b *Bot) showSupportInfo(chatID int64) {
 	supportText := `🆘 <b>Поддержка</b>
 
-Если у вас возникли вопросы или проблемы с ботом, вы можете:
-    
-1. Написать разработчику: @LONEl1st
-2. Оставить issue на GitHub: https://github.com/IlyaMakar/finance_bot
-
-Мы постараемся ответить вам как можно скорее!`
+Выберите действие:`
 
 	msg := tgbotapi.NewMessage(chatID, supportText)
 	msg.ParseMode = "HTML"
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("✉️ Написать разработчику", CallbackWriteSupport),
+			tgbotapi.NewInlineKeyboardButtonData("❓ FAQ", CallbackFAQ),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "settings_back"),
 		),
 	)
 	b.send(chatID, msg)
+}
+
+func (b *Bot) showCurrencyMenu(chatID int64) {
+	user, err := b.repo.GetOrCreateUser(chatID, "", "", "")
+	if err != nil {
+		b.sendError(chatID, err)
+		return
+	}
+
+	currentCurrency, _ := b.repo.GetUserCurrency(user.ID)
+
+	msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("💱 Текущая валюта: %s\nВыберите новую валюту:", currentCurrency))
+
+	keyboard := [][]tgbotapi.InlineKeyboardButton{
+		{tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("🇷🇺 RUB (Рубли)%s", b.getCurrencyCheckmark(currentCurrency, CurrencyRUB)), CallbackSetCurrency+CurrencyRUB)},
+		{tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("🇺🇸 USD (Доллары)%s", b.getCurrencyCheckmark(currentCurrency, CurrencyUSD)), CallbackSetCurrency+CurrencyUSD)},
+		{tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("🇪🇺 EUR (Евро)%s", b.getCurrencyCheckmark(currentCurrency, CurrencyEUR)), CallbackSetCurrency+CurrencyEUR)},
+		{tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "settings_back")},
+	}
+
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(keyboard...)
+	b.send(chatID, msg)
+}
+
+func (b *Bot) formatCurrency(amount float64, chatID int64) string {
+	user, err := b.repo.GetOrCreateUser(chatID, "", "", "")
+	if err != nil {
+		return fmt.Sprintf("%.2f ₽", amount) // По умолчанию RUB
+	}
+
+	currency, err := b.repo.GetUserCurrency(user.ID)
+	if err != nil {
+		return fmt.Sprintf("%.2f ₽", amount)
+	}
+
+	switch currency {
+	case CurrencyRUB:
+		return fmt.Sprintf("%.2f ₽", amount)
+	case CurrencyUSD:
+		return fmt.Sprintf("$%.2f", amount)
+	case CurrencyEUR:
+		return fmt.Sprintf("€%.2f", amount)
+	default:
+		return fmt.Sprintf("%.2f %s", amount, currency)
+	}
+}
+
+func (b *Bot) getCurrencyCheckmark(current, selected string) string {
+	if current == selected {
+		return " ✅"
+	}
+	return ""
+}
+
+func (b *Bot) handleSetCurrency(chatID int64, currency string) {
+	user, err := b.repo.GetOrCreateUser(chatID, "", "", "")
+	if err != nil {
+		b.sendError(chatID, err)
+		return
+	}
+
+	if err := b.repo.SetUserCurrency(user.ID, currency); err != nil {
+		b.sendError(chatID, err)
+		return
+	}
+
+	symbols := map[string]string{
+		CurrencyRUB: "₽",
+		CurrencyUSD: "$",
+		CurrencyEUR: "€",
+	}
+
+	b.send(chatID, tgbotapi.NewMessage(chatID,
+		fmt.Sprintf("✅ Валюта изменена на %s %s", currency, symbols[currency])))
+	b.showSettingsMenu(chatID)
 }
 
 func (b *Bot) showCategoryActions(chatID int64, categoryID int, svc *service.FinanceService) {
@@ -409,12 +492,15 @@ func (b *Bot) showSavingsStats(chatID int64, svc *service.FinanceService) {
 			totalGoal += *s.Goal
 			progress := b.renderProgressBar(s.Progress(), 10)
 
+			formattedAmount := b.formatCurrency(s.Amount, chatID)
+			formattedGoal := b.formatCurrency(*s.Goal, chatID)
+
 			msgText.WriteString(fmt.Sprintf(
 				"🔹 *%s*\n"+
-					"┣ Накоплено: *%.2f ₽*\n"+
-					"┣ Цель: *%.2f ₽*\n"+
+					"┣ Накоплено: *%s*\n"+
+					"┣ Цель: *%s*\n"+
 					"┗ Прогресс: %s\n\n",
-				s.Name, s.Amount, *s.Goal, progress,
+				s.Name, formattedAmount, formattedGoal, progress,
 			))
 		}
 	}
@@ -444,7 +530,7 @@ func (b *Bot) showTransactionHistory(chatID int64, svc *service.FinanceService) 
 
 	for i, t := range transactions {
 		formattedDate := t.Date.Format("02.01.2006")
-		formattedAmount := fmt.Sprintf("%.2f ₽", math.Abs(t.Amount))
+		formattedAmount := b.formatCurrency(math.Abs(t.Amount), chatID)
 
 		operationIcon := "📈"
 		operationType := "Доход"
@@ -519,24 +605,23 @@ func (b *Bot) showSavings(chatID int64, svc *service.FinanceService) {
 	} else {
 		for _, s := range savings {
 			progress := ""
+			formattedAmount := b.formatCurrency(s.Amount, chatID)
 			if s.Goal != nil {
 				progress = b.renderProgressBar(s.Progress(), 10)
-			}
-
-			msgText.WriteString(fmt.Sprintf(
-				"🔹 *%s*\n"+
-					"┣ Накоплено: *%.2f ₽*\n",
-				s.Name, s.Amount,
-			))
-
-			if s.Goal != nil {
+				formattedGoal := b.formatCurrency(*s.Goal, chatID)
 				msgText.WriteString(fmt.Sprintf(
-					"┣ Цель: *%.2f ₽*\n"+
+					"🔹 *%s*\n"+
+						"┣ Накоплено: *%s*\n"+
+						"┣ Цель: *%s*\n"+
 						"┗ Прогресс: %s\n\n",
-					*s.Goal, progress,
+					s.Name, formattedAmount, formattedGoal, progress,
 				))
 			} else {
-				msgText.WriteString("\n")
+				msgText.WriteString(fmt.Sprintf(
+					"🔹 *%s*\n"+
+						"┣ Накоплено: *%s*\n\n",
+					s.Name, formattedAmount,
+				))
 			}
 		}
 	}
@@ -562,16 +647,41 @@ func (b *Bot) showWeeklyReport(chatID int64, svc *service.FinanceService) {
 }
 
 func (b *Bot) showMonthlyReport(chatID int64, svc *service.FinanceService) {
+	user, err := b.repo.GetOrCreateUser(chatID, "", "", "")
+	if err != nil {
+		b.sendError(chatID, err)
+		return
+	}
 	now := time.Now()
-	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	end := start.AddDate(0, 1, 0)
+	startDay := user.PeriodStartDay
+	var start, end time.Time
+	if startDay <= now.Day() {
+		start = time.Date(now.Year(), now.Month(), startDay, 0, 0, 0, 0, now.Location())
+		end = start.AddDate(0, 1, 0)
+	} else {
+		prevMonth := now.AddDate(0, -1, 0)
+		start = time.Date(prevMonth.Year(), prevMonth.Month(), startDay, 0, 0, 0, 0, now.Location())
+		end = time.Date(now.Year(), now.Month(), startDay, 0, 0, 0, 0, now.Location())
+	}
 	b.generatePeriodReport(chatID, svc, start, end, "месяц")
 }
 
 func (b *Bot) showYearlyReport(chatID int64, svc *service.FinanceService) {
+	user, err := b.repo.GetOrCreateUser(chatID, "", "", "")
+	if err != nil {
+		b.sendError(chatID, err)
+		return
+	}
 	now := time.Now()
-	start := time.Date(now.Year(), 1, 1, 0, 0, 0, 0, now.Location())
-	end := start.AddDate(1, 0, 0)
+	startDay := user.PeriodStartDay
+	var start, end time.Time
+	if now.Month() > 1 || (now.Month() == 1 && now.Day() >= startDay) {
+		start = time.Date(now.Year(), 1, startDay, 0, 0, 0, 0, now.Location())
+		end = start.AddDate(1, 0, 0)
+	} else {
+		start = time.Date(now.Year()-1, 1, startDay, 0, 0, 0, 0, now.Location())
+		end = time.Date(now.Year(), 1, startDay, 0, 0, 0, 0, now.Location())
+	}
 	b.generatePeriodReport(chatID, svc, start, end, "год")
 }
 
@@ -603,12 +713,11 @@ func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, st
 		}
 	}
 
-	// Формируем текст отчета
 	msgText := strings.Builder{}
 	msgText.WriteString(fmt.Sprintf("📊 <b>Статистика за %s</b>\n\n", periodName))
 
-	// Доходы
-	msgText.WriteString(fmt.Sprintf("📈 <b>Доходы:</b> %.2f ₽\n", totalIncome))
+	formattedTotalIncome := b.formatCurrency(totalIncome, chatID)
+	msgText.WriteString(fmt.Sprintf("📈 <b>Доходы:</b> %s\n", formattedTotalIncome))
 	if len(incomeDetails) == 0 {
 		msgText.WriteString("┣ Нет доходов\n")
 	} else {
@@ -616,12 +725,13 @@ func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, st
 			if cat == "" {
 				cat = "Неизвестно"
 			}
-			msgText.WriteString(fmt.Sprintf("┣ %s: %.2f ₽\n", cat, amount))
+			formattedAmount := b.formatCurrency(amount, chatID)
+			msgText.WriteString(fmt.Sprintf("┣ %s: %s\n", cat, formattedAmount))
 		}
 	}
 
-	// Расходы
-	msgText.WriteString(fmt.Sprintf("\n📉 <b>Расходы:</b> %.2f ₽\n", totalExpense))
+	formattedTotalExpense := b.formatCurrency(totalExpense, chatID)
+	msgText.WriteString(fmt.Sprintf("\n📉 <b>Расходы:</b> %s\n", formattedTotalExpense))
 	if len(expenseDetails) == 0 {
 		msgText.WriteString("┣ Нет расходов\n")
 	} else {
@@ -635,14 +745,14 @@ func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, st
 			if totalExpense > 0 {
 				percentage = (amount / totalExpense) * 100
 			}
-			msgText.WriteString(fmt.Sprintf("┣ %s: %.2f ₽ (%.1f%%)\n", cat, amount, percentage))
+			formattedAmount := b.formatCurrency(amount, chatID)
+			msgText.WriteString(fmt.Sprintf("┣ %s: %s (%.1f%%)\n", cat, formattedAmount, percentage))
 		}
 	}
 
-	// Баланс
-	msgText.WriteString(fmt.Sprintf("\n💵 <b>Баланс:</b> %.2f ₽", totalIncome-totalExpense))
+	formattedBalance := b.formatCurrency(totalIncome-totalExpense, chatID)
+	msgText.WriteString(fmt.Sprintf("\n💵 <b>Баланс:</b> %s", formattedBalance))
 
-	// Проверяем длину сообщения
 	finalMsg := msgText.String()
 	if len(finalMsg) > 4096 {
 		logger.LogError(chatID, "Длина сообщения статистики превышает лимит Telegram (4096 символов)")
@@ -650,12 +760,11 @@ func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, st
 		return
 	}
 
-	// Отправляем сообщение
 	msg := tgbotapi.NewMessage(chatID, finalMsg)
 	msg.ParseMode = "HTML"
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("◀️ К выбору периода", "stats_back"),
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "stats_back"),
 			tgbotapi.NewInlineKeyboardButtonData("📤 Выгрузить отчет", fmt.Sprintf("export_report_%s_%s",
 				start.Format("2006-01-02"),
 				end.Format("2006-01-02"))),
@@ -671,7 +780,6 @@ func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, st
 	logger.LogButtonClickByID(chatID, fmt.Sprintf("Статистика за %s", periodName))
 }
 
-// sortCategoriesByAmount сортирует категории по сумме
 func sortCategoriesByAmount(details map[string]float64) []string {
 	type kv struct {
 		Key   string
@@ -704,5 +812,73 @@ func (b *Bot) SendReminder(chatID int64) {
 ➕ Нажми «Добавить операцию» или напиши сумму и комментарий, например:
 <code>150 такси</code>`)
 	msg.ParseMode = "HTML"
+	b.send(chatID, msg)
+}
+
+func (b *Bot) showWriteSupport(chatID int64) {
+	writeText := `✉️ <b>Написать разработчику</b>
+
+Если у вас возникли вопросы или проблемы, напишите напрямую: @LONEl1st
+
+Или оставьте issue на GitHub: https://github.com/IlyaMakar/finance_bot`
+
+	msg := tgbotapi.NewMessage(chatID, writeText)
+	msg.ParseMode = "HTML"
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад к поддержке", "support"),
+		),
+	)
+	b.send(chatID, msg)
+}
+
+func (b *Bot) showFAQ(chatID int64) {
+	faqText := `❓ <b>FAQ (Часто задаваемые вопросы)</b>
+
+Вот основная информация о боте. Если чего-то не хватает, напишите в поддержку!
+
+1. <b>Как добавить операцию?</b>
+   - Нажмите "➕ Добавить операцию" в главном меню.
+   - Выберите тип (Доход или Расход).
+   - Выберите категорию или создайте новую.
+   - Введите сумму и комментарий (опционально).
+
+2. <b>Как управлять копилками?</b>
+   - Перейдите в "💵 Накопления".
+   - Создайте новую копилку, укажите имя и цель (опционально).
+   - Пополняйте, редактируйте или удаляйте копилки.
+
+3. <b>Как посмотреть статистику?</b>
+   - Нажмите "📊 Статистика".
+   - Выберите период: день, неделя, месяц, год.
+   - Бот покажет доходы, расходы, баланс и детали по категориям.
+
+4. <b>Как включить/отключить уведомления?</b>
+   - В "⚙️ Настройки" выберите "🔔 Уведомления".
+   - Включите или отключите. Уведомления приходят в 16:00, если нет транзакций за день.
+
+5. <b>Как изменить валюту?</b>
+   - В "⚙️ Настройки" выберите "💱 Валюта".
+   - Выберите RUB, USD или EUR.
+
+6. <b>Как очистить все данные?</b>
+   - В "⚙️ Настройки" нажмите "🧹 Очистить все данные".
+   - Подтвердите — это удалит транзакции, категории и копилки.
+
+7. <b>Что делать, если бот не отвечает?</b>
+   - Проверьте интернет. Если проблема persists, напишите @LONEl1st.
+
+8. <b>Обновления бота</b>
+   - Бот уведомит вас о новых версиях. Читайте описания для новых фич.
+
+Если вопрос не покрыт, напишите разработчику!`
+
+	msg := tgbotapi.NewMessage(chatID, faqText)
+	msg.ParseMode = "HTML"
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад к поддержке", "support"),
+		),
+	)
 	b.send(chatID, msg)
 }

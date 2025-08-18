@@ -1,4 +1,3 @@
-// internal/bot/handlers/report_generator.go
 package handlers
 
 import (
@@ -100,7 +99,6 @@ func (rg *ReportGenerator) GeneratePDFReport(chatID int64, start, end time.Time,
 		balanceTrend = append(balanceTrend, chart.Value{Label: d, Value: balanceSum})
 	}
 
-	// === Общая статистика ===
 	pdf.SetFont("DejaVuSans", "B", 16)
 	pdf.CellFormat(190, 10, "Общая статистика", "", 1, "L", false, 0, "")
 	pdf.SetFont("DejaVuSans", "", 12)
@@ -122,7 +120,6 @@ func (rg *ReportGenerator) GeneratePDFReport(chatID int64, start, end time.Time,
 	pdf.SetY(pdf.GetY() + 50)
 	pdf.Ln(5)
 
-	// === Круговые диаграммы ===
 	pdf.SetFont("DejaVuSans", "B", 14)
 	pdf.CellFormat(190, 10, "Распределение по категориям", "", 1, "L", false, 0, "")
 	pdf.Ln(3)
@@ -144,7 +141,6 @@ func (rg *ReportGenerator) GeneratePDFReport(chatID int64, start, end time.Time,
 	pdf.SetY(yStart + 90)
 	pdf.Ln(10)
 
-	// === Детализация по категориям (таблица) ===
 	pdf.SetFont("DejaVuSans", "B", 14)
 	pdf.CellFormat(190, 10, "Детализация по категориям", "", 1, "L", false, 0, "")
 	pdf.SetFont("DejaVuSans", "", 11)
@@ -173,7 +169,6 @@ func (rg *ReportGenerator) GeneratePDFReport(chatID int64, start, end time.Time,
 
 	pdf.Ln(10)
 
-	// === Автоанализ ===
 	pdf.SetFont("DejaVuSans", "B", 14)
 	pdf.CellFormat(190, 10, "Автоматический анализ", "", 1, "L", false, 0, "")
 	pdf.SetFont("DejaVuSans", "", 12)
@@ -186,8 +181,6 @@ func (rg *ReportGenerator) GeneratePDFReport(chatID int64, start, end time.Time,
 
 	return buf.Bytes(), nil
 }
-
-// ====== Вспомогательные функции ниже (без изменений или с улучшениями) ======
 
 func (rg *ReportGenerator) generateLineChart(data []chart.Value, color drawing.Color) ([]byte, error) {
 	graph := chart.Chart{
@@ -225,7 +218,7 @@ func (rg *ReportGenerator) generatePieWithLegend(data map[string]float64) ([]byt
 		c := chart.GetDefaultColor(i)
 		values = append(values, chart.Value{
 			Value: val,
-			Label: "", // убрать метки — легенда отдельно
+			Label: "",
 			Style: chart.Style{FillColor: c},
 		})
 		legend = append(legend, fmt.Sprintf("%s – %.2f ₽ (%.0f%%)", k, val, percent))

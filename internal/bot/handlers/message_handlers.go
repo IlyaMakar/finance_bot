@@ -131,6 +131,27 @@ func (b *Bot) handleUserInput(m *tgbotapi.Message, svc *service.FinanceService) 
 
 		b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "✅ Комментарий обновлен!"))
 		b.handleEditTransaction(m.Chat.ID, state.TempCategoryID, svc)
+
+	case "enter_period_start_day":
+		user, err := b.repo.GetOrCreateUser(m.Chat.ID, m.From.UserName, m.From.FirstName, m.From.LastName)
+		if err != nil {
+			b.sendError(m.Chat.ID, err)
+			return
+		}
+		day, err := strconv.ParseInt(m.Text, 10, 32)
+		if err != nil || day < 1 || day > 31 {
+			b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "⚠️ Введите число от 1 до 31:"))
+			return
+		}
+		svc := service.NewService(b.repo, user)
+		err = svc.SetPeriodStartDay(int(day))
+		if err != nil {
+			b.sendError(m.Chat.ID, err)
+			return
+		}
+		b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, fmt.Sprintf("✅ Начало периода установлено на %d-е число.", day)))
+		delete(userStates, m.From.ID)
+		b.showSettingsMenu(m.Chat.ID)
 	default:
 		b.sendMainMenu(m.Chat.ID, "🤔 Неизвестная команда")
 	}
@@ -162,15 +183,17 @@ func (b *Bot) handleEditTransaction(chatID int64, transactionID int, svc *servic
 		categoryName = category.Name
 	}
 
+	formattedAmount := b.formatCurrency(math.Abs(trans.Amount), chatID)
+
 	msgText := fmt.Sprintf(
 		"✏️ <b>Редактирование операции</b>\n\n"+
 			"📅 Дата: %s\n"+
-			"💰 Сумма: %.2f ₽\n"+
+			"💰 Сумма: %s\n"+
 			"📂 Категория: %s\n"+
 			"💬 Комментарий: %s\n\n"+
 			"Выберите что изменить:",
 		trans.Date.Format("02.01.2006"),
-		math.Abs(trans.Amount),
+		formattedAmount,
 		categoryName,
 		trans.Comment,
 	)
@@ -291,8 +314,10 @@ func (b *Bot) handleComment(m *tgbotapi.Message, svc *service.FinanceService) {
 		amount = -amount
 	}
 
+	formattedAmount := b.formatCurrency(amount, m.Chat.ID)
+
 	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID,
-		fmt.Sprintf("✅ %s: %s, %.2f ₽", operationType, categoryName, amount)))
+		fmt.Sprintf("✅ %s: %s, %s", operationType, categoryName, formattedAmount)))
 
 	delete(userStates, m.From.ID)
 	b.sendMainMenu(m.Chat.ID, "🎉 Операция добавлена! Что дальше?")
@@ -320,8 +345,11 @@ func (b *Bot) handleSavingAmount(m *tgbotapi.Message, svc *service.FinanceServic
 		return
 	}
 
+	formattedAmount := b.formatCurrency(amount, m.Chat.ID)
+	formattedNewAmount := b.formatCurrency(newAmount, m.Chat.ID)
+
 	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID,
-		fmt.Sprintf("✅ Копилка '%s' пополнена на %.2f ₽!\n💰 Новый баланс: %.2f ₽", saving.Name, amount, newAmount)))
+		fmt.Sprintf("✅ Копилка '%s' пополнена на %s!\n💰 Новый баланс: %s", saving.Name, formattedAmount, formattedNewAmount)))
 
 	delete(userStates, m.From.ID)
 	b.showSavings(m.Chat.ID, svc)

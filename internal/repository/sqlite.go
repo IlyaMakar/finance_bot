@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -20,6 +21,7 @@ type User struct {
 	LastName             string
 	CreatedAt            time.Time
 	NotificationsEnabled bool
+	PeriodStartDay       int
 }
 
 type Category struct {
@@ -76,7 +78,8 @@ CREATE TABLE IF NOT EXISTS users (
     first_name TEXT,
     last_name TEXT,
     created_at TEXT NOT NULL,
-    notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE
+    notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    period_start_day INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS global_categories (
@@ -116,6 +119,12 @@ CREATE TABLE IF NOT EXISTS transactions (
     comment TEXT,
     FOREIGN KEY(category_id) REFERENCES categories(id),
     FOREIGN KEY(user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS user_currency_settings (
+    user_id INTEGER PRIMARY KEY,
+    currency TEXT NOT NULL DEFAULT 'RUB',
+    FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS savings (
@@ -166,15 +175,33 @@ CREATE TABLE IF NOT EXISTS user_version_read (
     FOREIGN KEY (version_id) REFERENCES versions(id)
 );
 `
+
 	_, err := db.Exec(schema)
 	if err != nil {
-		return err
+		return fmt.Errorf("ошибка создания схемы базы данных: %w", err)
+	}
+
+	var columnExists int
+	err = db.QueryRow(`
+		SELECT COUNT(*) 
+		FROM pragma_table_info('users') 
+		WHERE name = 'period_start_day'
+	`).Scan(&columnExists)
+	if err != nil {
+		return fmt.Errorf("ошибка проверки столбца period_start_day: %w", err)
+	}
+
+	if columnExists == 0 {
+		_, err = db.Exec("ALTER TABLE users ADD COLUMN period_start_day INTEGER NOT NULL DEFAULT 1")
+		if err != nil && !strings.Contains(err.Error(), "duplicate column") {
+			return fmt.Errorf("ошибка добавления столбца period_start_day: %w", err)
+		}
 	}
 
 	var count int
 	err = db.QueryRow("SELECT COUNT(*) FROM global_categories").Scan(&count)
 	if err != nil {
-		return err
+		return fmt.Errorf("ошибка проверки глобальных категорий: %w", err)
 	}
 	if count == 0 {
 		initialCategories := []struct {
@@ -190,10 +217,11 @@ CREATE TABLE IF NOT EXISTS user_version_read (
 		for _, cat := range initialCategories {
 			_, err = db.Exec("INSERT INTO global_categories (name, type) VALUES (?, ?)", cat.name, cat.typ)
 			if err != nil {
-				return err
+				return fmt.Errorf("ошибка добавления начальной категории %s: %w", cat.name, err)
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -255,9 +283,9 @@ func (r *SQLiteRepository) GetOrCreateUser(telegramID int64, username, firstName
 	var createdAt string
 
 	err := r.db.QueryRow(
-		"SELECT id, telegram_id, username, first_name, last_name, created_at FROM users WHERE telegram_id = ?",
+		"SELECT id, telegram_id, username, first_name, last_name, created_at, notifications_enabled, period_start_day FROM users WHERE telegram_id = ?",
 		telegramID,
-	).Scan(&user.ID, &user.TelegramID, &user.Username, &user.FirstName, &user.LastName, &createdAt)
+	).Scan(&user.ID, &user.TelegramID, &user.Username, &user.FirstName, &user.LastName, &createdAt, &user.NotificationsEnabled, &user.PeriodStartDay)
 
 	if err == nil {
 		user.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
@@ -267,7 +295,7 @@ func (r *SQLiteRepository) GetOrCreateUser(telegramID int64, username, firstName
 
 	if err == sql.ErrNoRows {
 		res, err := r.db.Exec(
-			"INSERT INTO users (telegram_id, username, first_name, last_name, created_at) VALUES (?, ?, ?, ?, ?)",
+			"INSERT INTO users (telegram_id, username, first_name, last_name, created_at, notifications_enabled, period_start_day) VALUES (?, ?, ?, ?, ?, TRUE, 1)",
 			telegramID, username, firstName, lastName, time.Now().Format(time.RFC3339),
 		)
 		if err != nil {
@@ -719,6 +747,11 @@ func (r *SQLiteRepository) RenameSaving(userID, id int, newName string) error {
 	return err
 }
 
+func (r *SQLiteRepository) UpdateUserPeriodStartDay(userID int, day int) error {
+	_, err := r.db.Exec("UPDATE users SET period_start_day = ? WHERE id = ?", day, userID)
+	return err
+}
+
 type Version struct {
 	ID          int
 	Version     string
@@ -766,4 +799,27 @@ func (r *SQLiteRepository) HasUserReadVersion(userID, versionID int) (bool, erro
 	).Scan(&count)
 
 	return count > 0, err
+}
+
+func (r *SQLiteRepository) SetUserCurrency(userID int, currency string) error {
+	_, err := r.db.Exec(`
+        INSERT OR REPLACE INTO user_currency_settings (user_id, currency) 
+        VALUES (?, ?)`,
+		userID, currency,
+	)
+	return err
+}
+
+func (r *SQLiteRepository) GetUserCurrency(userID int) (string, error) {
+	var currency string
+	err := r.db.QueryRow(`
+        SELECT currency FROM user_currency_settings 
+        WHERE user_id = ?`,
+		userID,
+	).Scan(&currency)
+
+	if err == sql.ErrNoRows {
+		return "RUB", nil
+	}
+	return currency, err
 }

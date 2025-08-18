@@ -59,14 +59,12 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		}
 		svc := service.NewService(b.repo, user)
 
-		// Создаем отчет
 		pdfData, err := b.reportGen.GeneratePDFReport(chatID, start, end, svc)
 		if err != nil {
 			b.sendError(chatID, fmt.Errorf("ошибка генерации отчета"))
 			return
 		}
 
-		// Отправляем отчет пользователю
 		file := tgbotapi.FileBytes{
 			Name:  fmt.Sprintf("Отчет_%s_%s.pdf", start.Format("02.01.2006"), end.Format("02.01.2006")),
 			Bytes: pdfData,
@@ -193,36 +191,33 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		return
 	}
 
+	if strings.HasPrefix(data, CallbackSetCurrency) {
+		currency := data[len(CallbackSetCurrency):]
+		b.handleSetCurrency(chatID, currency)
+		return
+	}
+
 	switch data {
 	case "cancel":
 		b.sendMainMenu(chatID, "🚫 Действие отменено. Что дальше?")
-
 	case "saving_tips":
 		b.showSavingTips(chatID)
-
 	case "start_transaction":
 		b.startAddTransaction(chatID)
-
 	case "manage_categories":
 		b.showCategoryManagement(chatID, svc)
-
 	case "settings_back":
 		b.showSettingsMenu(chatID)
-
 	case "add_to_saving":
 		b.startAddToSaving(chatID, svc)
-
 	case "savings_stats":
 		b.showSavingsStats(chatID, svc)
-
 	case "show_savings":
 		b.showSavings(chatID, svc)
-
 	case "main_menu":
 		b.sendMainMenu(chatID, "Главное меню")
 	case "support":
 		b.showSupportInfo(chatID)
-
 	case "skip_comment":
 		editMsg := tgbotapi.NewEditMessageReplyMarkup(chatID, q.Message.MessageID, tgbotapi.InlineKeyboardMarkup{})
 		b.bot.Send(editMsg)
@@ -234,7 +229,6 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 			From: q.From,
 			Text: "Пропустить",
 		}, svc)
-
 	case "skip_saving_goal":
 		editMsg := tgbotapi.NewEditMessageReplyMarkup(chatID, q.Message.MessageID, tgbotapi.InlineKeyboardMarkup{})
 		b.bot.Send(editMsg)
@@ -246,31 +240,24 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 			From: q.From,
 			Text: "Пропустить",
 		})
-
 	case "type_income", "type_expense":
 		b.handleTypeSelect(chatID, q.Message.MessageID, data, svc)
-
 	case "notification_settings":
 		b.showNotificationSettings(chatID)
-
 	case "enable_notifications":
 		b.handleToggleNotifications(chatID, true, q.From)
-
 	case "disable_notifications":
 		b.handleToggleNotifications(chatID, false, q.From)
-
 	case "other_cat":
 		state := userStates[chatID]
 		state.Step = "new_cat"
 		userStates[chatID] = state
 		b.send(chatID, tgbotapi.NewMessage(chatID, "📝 Введите название новой категории:"))
-
 	case "create_saving":
 		state := userStates[chatID]
 		state.Step = "create_saving_name"
 		userStates[chatID] = state
 		b.send(chatID, tgbotapi.NewMessage(chatID, "💸 Введите название копилки:"))
-
 	case "confirm_clear_data":
 		msg := tgbotapi.NewMessage(chatID, "⚠️ <b>Внимание!</b>\n\nВы действительно хотите удалить ВСЕ свои данные? Это действие нельзя отменить!\n\nВсе транзакции, категории и копилки будут удалены.")
 		msg.ParseMode = "HTML"
@@ -281,7 +268,6 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 			),
 		)
 		b.send(chatID, msg)
-
 	case "clear_data":
 		err := svc.ClearUserData()
 		if err != nil {
@@ -289,12 +275,9 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 			b.sendError(chatID, err)
 			return
 		}
-
 		b.initBasicCategories(user)
-
 		b.send(chatID, tgbotapi.NewMessage(chatID, "🧹 Все данные успешно удалены! Бот сброшен к начальному состоянию."))
 		b.sendMainMenu(chatID, "🔄 Вы можете начать заново!")
-
 	case "stats_day":
 		b.showDailyReport(chatID, svc)
 	case "stats_week":
@@ -305,28 +288,23 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		b.showYearlyReport(chatID, svc)
 	case "stats_back":
 		b.showReportPeriodMenu(chatID)
-
 	case "show_history":
 		b.showTransactionHistory(chatID, svc)
-
 	case "edit_amount":
 		state := userStates[chatID]
 		state.Step = "edit_transaction_amount"
 		userStates[chatID] = state
 		b.send(chatID, tgbotapi.NewMessage(chatID, "💰 Введите новую сумму:"))
-
 	case "edit_category":
 		state := userStates[chatID]
 		msg := tgbotapi.NewMessage(chatID, "📂 Выберите новую категорию:")
 		msg.ReplyMarkup = b.createCategoryKeyboard(chatID, state.TempType, "change_category")
 		b.send(chatID, msg)
-
 	case "edit_comment":
 		state := userStates[chatID]
 		state.Step = "edit_transaction_comment"
 		userStates[chatID] = state
 		b.send(chatID, tgbotapi.NewMessage(chatID, "💬 Введите новый комментарий:"))
-
 	case "delete_transaction":
 		err := svc.DeleteTransaction(userStates[chatID].TempCategoryID)
 		if err != nil {
@@ -336,7 +314,17 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		delete(userStates, chatID)
 		b.send(chatID, tgbotapi.NewMessage(chatID, "✅ Операция удалена!"))
 		b.showTransactionHistory(chatID, svc)
-
+	case CallbackCurrencySettings:
+		b.showCurrencyMenu(chatID)
+	case CallbackSetPeriodStart:
+		state := userStates[chatID]
+		state.Step = "enter_period_start_day"
+		userStates[chatID] = state
+		b.send(chatID, tgbotapi.NewMessage(chatID, "📅 Введите день начала периода (1-31):"))
+	case CallbackWriteSupport:
+		b.showWriteSupport(chatID)
+	case CallbackFAQ:
+		b.showFAQ(chatID)
 	default:
 		b.bot.Send(tgbotapi.NewCallback(q.ID, ""))
 	}
