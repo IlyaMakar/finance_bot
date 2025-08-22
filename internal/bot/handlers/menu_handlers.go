@@ -384,7 +384,7 @@ func (b *Bot) showCurrencyMenu(chatID int64) {
 func (b *Bot) formatCurrency(amount float64, chatID int64) string {
 	user, err := b.repo.GetOrCreateUser(chatID, "", "", "")
 	if err != nil {
-		return fmt.Sprintf("%.2f ₽", amount) // По умолчанию RUB
+		return fmt.Sprintf("%.2f ₽", amount)
 	}
 
 	currency, err := b.repo.GetUserCurrency(user.ID)
