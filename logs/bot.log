@@ -1031,3 +1031,15 @@ INFO 2025/08/18 08:44:20 logger.go:49: BTN @LONEl1st: support
 INFO 2025/08/18 08:44:22 logger.go:49: BTN @LONEl1st: write_support
 INFO 2025/08/18 08:44:23 logger.go:49: BTN @LONEl1st: support
 INFO 2025/08/18 08:44:24 logger.go:49: BTN @LONEl1st: faq
+INFO 2025/08/22 09:51:22 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/08/22 09:51:25 logger.go:38: CMD @LONEl1st: Получено сообщение: ➕ Добавить операцию
+INFO 2025/08/22 09:51:25 logger.go:38: CMD @LONEl1st: Кнопка: Добавить операцию
+INFO 2025/08/22 09:51:28 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/08/22 09:55:13 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/08/22 09:55:19 logger.go:38: CMD @LONEl1st: Получено сообщение: ⚙️ Настройки
+INFO 2025/08/22 09:55:19 logger.go:38: CMD @LONEl1st: Кнопка: Настройки
+INFO 2025/08/22 09:55:20 logger.go:49: BTN @LONEl1st: confirm_clear_data
+INFO 2025/08/22 09:55:22 logger.go:49: BTN @LONEl1st: settings_back
+INFO 2025/08/22 09:55:26 logger.go:49: BTN @LONEl1st: support
+INFO 2025/08/22 09:55:28 logger.go:49: BTN @LONEl1st: settings_back
+INFO 2025/08/22 09:55:37 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
