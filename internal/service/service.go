@@ -221,3 +221,7 @@ func (s *FinanceService) HasUserReadVersion(versionID int) (bool, error) {
 func (s *FinanceService) SetPeriodStartDay(day int) error {
 	return s.repo.UpdateUserPeriodStartDay(s.userID, day)
 }
+
+func (s *FinanceService) UpdateSavingGoal(savingID int, goal *float64) error {
+	return s.repo.UpdateSavingGoal(s.userID, savingID, goal)
+}

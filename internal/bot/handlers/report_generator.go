@@ -254,7 +254,7 @@ func (rg *ReportGenerator) addLegendWithColor(pdf *gofpdf.Fpdf, items []string, 
 	}
 }
 
-func (rg *ReportGenerator) addImageToPDF(pdf *gofpdf.Fpdf, img []byte, title string, x, y, w, h float64) {
+func (rg *ReportGenerator) addImageToPDF(pdf *gofpdf.Fpdf, img []byte, _ string, x, y, w, h float64) {
 	tmpfile, err := os.CreateTemp("", "chart*.png")
 	if err != nil {
 		return

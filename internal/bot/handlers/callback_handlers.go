@@ -197,27 +197,94 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		return
 	}
 
+	if strings.HasPrefix(data, "saving_add_") {
+		savingID, _ := strconv.Atoi(data[len("saving_add_"):])
+		state := userStates[q.From.ID]
+		state.Step = "enter_saving_amount"
+		state.TempCategoryID = savingID
+		userStates[q.From.ID] = state
+
+		saving, err := svc.GetSavingByID(savingID)
+		if err != nil {
+			b.sendError(chatID, fmt.Errorf("не удалось найти копилку"))
+			return
+		}
+
+		b.deleteMessage(chatID, q.Message.MessageID)
+		b.send(chatID, tgbotapi.NewMessage(chatID, fmt.Sprintf("💵 Вы выбрали копилку: %s\nВведите сумму для пополнения:", saving.Name)))
+		return
+	}
+
+	if strings.HasPrefix(data, "saving_withdraw_") {
+		savingID, _ := strconv.Atoi(data[len("saving_withdraw_"):])
+		state := userStates[q.From.ID]
+		state.Step = "enter_saving_withdraw_amount"
+		state.TempCategoryID = savingID
+		userStates[q.From.ID] = state
+
+		saving, err := svc.GetSavingByID(savingID)
+		if err != nil {
+			b.sendError(chatID, fmt.Errorf("не удалось найти копилку"))
+			return
+		}
+
+		b.deleteMessage(chatID, q.Message.MessageID)
+		b.send(chatID, tgbotapi.NewMessage(chatID, fmt.Sprintf("💵 Вы выбрали копилку: %s\nВведите сумму для снятия:", saving.Name)))
+		return
+	}
+
+	if strings.HasPrefix(data, "saving_rename_") {
+		savingID, _ := strconv.Atoi(data[len("saving_rename_"):])
+		state := userStates[q.From.ID]
+		state.Step = "rename_saving"
+		state.TempCategoryID = savingID
+		userStates[q.From.ID] = state
+
+		b.deleteMessage(chatID, q.Message.MessageID)
+		b.send(chatID, tgbotapi.NewMessage(chatID, "✏️ Введите новое название копилки:"))
+		return
+	}
+
+	if strings.HasPrefix(data, "saving_delete_") {
+		savingID, _ := strconv.Atoi(data[len("saving_delete_"):])
+		b.deleteMessage(chatID, q.Message.MessageID)
+		b.handleDeleteSaving(chatID, savingID, 0, svc) // 0 потому что сообщение уже удалено
+		return
+	}
+
 	switch data {
 	case "cancel":
+		b.deleteMessage(chatID, q.Message.MessageID)
 		b.sendMainMenu(chatID, "🚫 Действие отменено. Что дальше?")
 	case "saving_tips":
 		b.showSavingTips(chatID)
-	case "start_transaction":
-		b.startAddTransaction(chatID)
 	case "manage_categories":
 		b.showCategoryManagement(chatID, svc)
 	case "settings_back":
 		b.showSettingsMenu(chatID)
 	case "add_to_saving":
 		b.startAddToSaving(chatID, svc)
+
 	case "savings_stats":
 		b.showSavingsStats(chatID, svc)
-	case "show_savings":
-		b.showSavings(chatID, svc)
 	case "main_menu":
-		b.sendMainMenu(chatID, "Главное меню")
+		b.deleteMessage(chatID, q.Message.MessageID)
+		b.sendMainMenu(chatID, "🏠 Главное меню")
 	case "support":
+		b.deleteMessage(chatID, q.Message.MessageID)
 		b.showSupportInfo(chatID)
+	case "show_stats":
+		b.deleteMessage(chatID, q.Message.MessageID)
+		b.showReportPeriodMenu(chatID)
+	case "show_savings":
+		b.deleteMessage(chatID, q.Message.MessageID)
+		b.showSavings(chatID, svc)
+	case "show_settings":
+		b.deleteMessage(chatID, q.Message.MessageID)
+		b.showSettingsMenu(chatID)
+	case "start_transaction":
+		b.deleteMessage(chatID, q.Message.MessageID)
+		b.startAddTransaction(chatID)
 	case "skip_comment":
 		editMsg := tgbotapi.NewEditMessageReplyMarkup(chatID, q.Message.MessageID, tgbotapi.InlineKeyboardMarkup{})
 		b.bot.Send(editMsg)

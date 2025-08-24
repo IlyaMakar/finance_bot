@@ -823,3 +823,15 @@ func (r *SQLiteRepository) GetUserCurrency(userID int) (string, error) {
 	}
 	return currency, err
 }
+
+func (r *SQLiteRepository) UpdateSavingGoal(userID, id int, goal *float64) error {
+	if _, err := r.GetSavingByID(userID, id); err != nil {
+		return err
+	}
+
+	_, err := r.db.Exec(
+		"UPDATE savings SET goal = ? WHERE id = ? AND user_id = ?",
+		goal, id, userID,
+	)
+	return err
+}

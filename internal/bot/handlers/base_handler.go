@@ -88,19 +88,20 @@ func (b *Bot) sendError(chatID int64, err error) {
 
 func (b *Bot) sendMainMenu(chatID int64, text string) {
 	msg := tgbotapi.NewMessage(chatID, text)
-	menu := tgbotapi.NewReplyKeyboard(
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("➕ Добавить операцию"),
+
+	// Убираем обычную клавиатуру и ставим инлайн
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("💸 Добавить операцию", "start_transaction"),
 		),
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("📊 Статистика"),
-			tgbotapi.NewKeyboardButton("💵 Накопления"),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📊 Статистика", "show_stats"),
+			tgbotapi.NewInlineKeyboardButtonData("💰 Накопления", "show_savings"),
 		),
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("⚙️ Настройки"),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("⚙️ Настройки", "show_settings"),
 		),
 	)
-	msg.ReplyMarkup = menu
 	msg.ParseMode = "HTML"
 	b.send(chatID, msg)
 }
@@ -138,4 +139,9 @@ func (b *Bot) Start() {
 			b.handleCallback(upd.CallbackQuery)
 		}
 	}
+}
+
+func (b *Bot) deleteMessage(chatID int64, messageID int) {
+	deleteMsg := tgbotapi.NewDeleteMessage(chatID, messageID)
+	b.bot.Send(deleteMsg)
 }

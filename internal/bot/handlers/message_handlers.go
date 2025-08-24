@@ -32,22 +32,23 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 	case "/start":
 		logger.LogCommand(m.From.UserName, "Команда /start")
 		b.initBasicCategories(user)
-		welcomeMsg := `👋 <b>Привет! Я ваш финансовый помошник!</b>
 
-📌 <i>Вот что я умею:</i>
+		welcomeMsg := `👋 <b>Привет! Я твой финансовый помощник! 🎯</b>
 
-➕ <b>Добавить операцию</b> - учет доходов и расходов
-💰 <b>Пополнить копилку</b> - пополнение ваших накоплений
-📊 <b>Статистика</b> - подробные отчеты и аналитика
-💵 <b>Накопления</b> - управление сберегательными целями
-⚙️ <b>Настройки</b> - персонализация бота`
+💰 <i>Со мной ты сможешь:</i>
+• 📊 Следить за доходами и расходами
+• 💵 Копить на мечты и цели  
+• 📈 Анализировать свои финансы
+• 🔔 Получать полезные напоминания
+
+🎉 <b>Давай наведем порядок в финансах вместе!</b>`
 
 		msg := tgbotapi.NewMessage(m.Chat.ID, welcomeMsg)
 		msg.ParseMode = "HTML"
 		msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("📝 11 советов по экономии", "saving_tips"),
-				tgbotapi.NewInlineKeyboardButtonData("➕ Начать учет", "start_transaction"),
+				tgbotapi.NewInlineKeyboardButtonData("💡 Советы по экономии", "saving_tips"),
+				tgbotapi.NewInlineKeyboardButtonData("🚀 Начать учет", "start_transaction"),
 			),
 		)
 		b.send(m.Chat.ID, msg)
@@ -97,7 +98,23 @@ func (b *Bot) handleUserInput(m *tgbotapi.Message, svc *service.FinanceService) 
 	case "create_saving_goal":
 		b.handleCreateSavingGoal(m)
 	case "rename_saving":
-		b.handleRenameSaving(m, svc)
+		state := userStates[m.From.ID]
+		newName := strings.TrimSpace(m.Text)
+
+		if newName == "" {
+			b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "⚠️ Название не может быть пустым. Попробуйте снова:"))
+			return
+		}
+
+		err := svc.RenameSaving(state.TempCategoryID, newName)
+		if err != nil {
+			b.sendError(m.Chat.ID, err)
+			return
+		}
+
+		delete(userStates, m.From.ID)
+		b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "✅ Копилка переименована!"))
+		b.showSavingsManagement(m.Chat.ID, svc)
 	case "edit_transaction_amount":
 		amount, err := strconv.ParseFloat(m.Text, 64)
 		if err != nil || amount <= 0 {
@@ -152,6 +169,43 @@ func (b *Bot) handleUserInput(m *tgbotapi.Message, svc *service.FinanceService) 
 		b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, fmt.Sprintf("✅ Начало периода установлено на %d-е число.", day)))
 		delete(userStates, m.From.ID)
 		b.showSettingsMenu(m.Chat.ID)
+
+	case "enter_saving_withdraw_amount":
+		amount, err := strconv.ParseFloat(m.Text, 64)
+		if err != nil || amount <= 0 {
+			b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "⚠️ Введите корректную сумму (например, 500):"))
+			return
+		}
+
+		state := userStates[m.From.ID]
+		savingID := state.TempCategoryID
+
+		saving, err := svc.GetSavingByID(savingID)
+		if err != nil {
+			b.sendError(m.Chat.ID, fmt.Errorf("не удалось найти копилку"))
+			return
+		}
+
+		if saving.Amount < amount {
+			b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "❌ Недостаточно средств в копилке!"))
+			return
+		}
+
+		newAmount := saving.Amount - amount
+		if err := svc.UpdateSavingAmount(savingID, newAmount); err != nil {
+			b.sendError(m.Chat.ID, err)
+			return
+		}
+
+		formattedAmount := b.formatCurrency(amount, m.Chat.ID)
+		formattedNewAmount := b.formatCurrency(newAmount, m.Chat.ID)
+
+		b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID,
+			fmt.Sprintf("✅ Снято %s из копилки '%s'!\n💰 Новый баланс: %s",
+				formattedAmount, saving.Name, formattedNewAmount)))
+
+		delete(userStates, m.From.ID)
+		b.showSavingActions(m.Chat.ID, savingID, svc)
 	default:
 		b.sendMainMenu(m.Chat.ID, "🤔 Неизвестная команда")
 	}

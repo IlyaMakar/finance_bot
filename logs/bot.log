@@ -1031,3 +1031,202 @@ INFO 2025/08/18 08:44:20 logger.go:49: BTN @LONEl1st: support
 INFO 2025/08/18 08:44:22 logger.go:49: BTN @LONEl1st: write_support
 INFO 2025/08/18 08:44:23 logger.go:49: BTN @LONEl1st: support
 INFO 2025/08/18 08:44:24 logger.go:49: BTN @LONEl1st: faq
+ERROR 2025/08/24 19:53:23 logger.go:68: ERR system: TELEGRAM_TOKEN not set
+INFO 2025/08/24 19:53:34 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/08/24 19:53:38 logger.go:38: CMD @LONEl1st: Получено сообщение: ⚙️ Настройки
+INFO 2025/08/24 19:53:38 logger.go:38: CMD @LONEl1st: Кнопка: Настройки
+INFO 2025/08/24 19:53:40 logger.go:49: BTN @LONEl1st: period_settings
+INFO 2025/08/24 19:53:42 logger.go:49: BTN @LONEl1st: period_settings
+INFO 2025/08/24 20:18:31 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/08/24 20:18:54 logger.go:49: BTN @LONEl1st: period_settings
+INFO 2025/08/24 20:18:57 logger.go:49: BTN @LONEl1st: set_period_start
+INFO 2025/08/24 20:19:00 logger.go:38: CMD @LONEl1st: Получено сообщение: 25
+INFO 2025/08/24 20:19:00 logger.go:38: CMD @LONEl1st: Текст сообщения: 25
+INFO 2025/08/24 20:53:01 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/08/24 21:08:09 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/08/24 21:08:22 logger.go:38: CMD @LONEl1st: Получено сообщение: /start
+INFO 2025/08/24 21:08:22 logger.go:38: CMD @LONEl1st: Команда /start
+INFO 2025/08/24 21:08:24 logger.go:49: BTN @LONEl1st: start_transaction
+INFO 2025/08/24 21:08:28 logger.go:49: BTN @LONEl1st: cancel
+INFO 2025/08/24 21:08:32 logger.go:49: BTN @LONEl1st: show_settings
+INFO 2025/08/24 21:09:21 logger.go:49: BTN @LONEl1st: period_settings
+INFO 2025/08/24 21:09:22 logger.go:49: BTN @LONEl1st: settings_back
+INFO 2025/08/24 21:09:24 logger.go:49: BTN @LONEl1st: notification_settings
+INFO 2025/08/24 21:09:25 logger.go:49: BTN @LONEl1st: settings_back
+INFO 2025/08/24 21:09:29 logger.go:49: BTN @LONEl1st: period_settings
+INFO 2025/08/24 21:13:34 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/08/24 21:14:49 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/08/24 21:14:59 logger.go:38: CMD @LONEl1st: Получено сообщение: /strat
+INFO 2025/08/24 21:15:11 logger.go:38: CMD @LONEl1st: Получено сообщение: /start
+INFO 2025/08/24 21:15:11 logger.go:38: CMD @LONEl1st: Команда /start
+INFO 2025/08/24 21:15:13 logger.go:49: BTN @LONEl1st: start_transaction
+INFO 2025/08/24 21:15:15 logger.go:49: BTN @LONEl1st: cancel
+INFO 2025/08/24 21:15:16 logger.go:49: BTN @LONEl1st: show_stats
+INFO 2025/08/24 21:15:18 logger.go:49: BTN @LONEl1st: stats_day
+INFO 2025/08/24 21:15:18 logger.go:53: BTN user_970147668: Статистика за день
+INFO 2025/08/24 21:15:20 logger.go:49: BTN @LONEl1st: stats_back
+INFO 2025/08/24 21:15:21 logger.go:49: BTN @LONEl1st: main_menu
+INFO 2025/08/24 21:15:25 logger.go:49: BTN @LONEl1st: show_settings
+INFO 2025/08/24 21:15:37 logger.go:49: BTN @LONEl1st: notification_settings
+INFO 2025/08/24 21:15:38 logger.go:49: BTN @LONEl1st: settings_back
+INFO 2025/08/24 21:15:51 logger.go:49: BTN @LONEl1st: stats_back
+INFO 2025/08/24 21:15:55 logger.go:49: BTN @LONEl1st: main_menu
+INFO 2025/08/24 21:15:59 logger.go:49: BTN @LONEl1st: start_transaction
+INFO 2025/08/24 21:16:04 logger.go:49: BTN @LONEl1st: show_history
+INFO 2025/08/24 21:16:06 logger.go:49: BTN @LONEl1st: stats_back
+INFO 2025/08/24 21:16:08 logger.go:49: BTN @LONEl1st: stats_year
+INFO 2025/08/24 21:16:08 logger.go:53: BTN user_970147668: Статистика за год
+INFO 2025/08/24 21:16:19 logger.go:49: BTN @LONEl1st: stats_back
+INFO 2025/08/24 21:16:55 logger.go:49: BTN @LONEl1st: main_menu
+INFO 2025/08/24 21:16:57 logger.go:49: BTN @LONEl1st: show_settings
+INFO 2025/08/24 21:18:52 logger.go:38: CMD @GHOSTH00D: Получено сообщение: /start
+INFO 2025/08/24 21:18:52 logger.go:38: CMD @GHOSTH00D: Команда /start
+INFO 2025/08/24 21:19:32 logger.go:49: BTN @GHOSTH00D: start_transaction
+INFO 2025/08/24 21:19:40 logger.go:49: BTN @GHOSTH00D: type_income
+INFO 2025/08/24 21:19:41 logger.go:49: BTN @GHOSTH00D: cat_18
+INFO 2025/08/24 21:19:45 logger.go:38: CMD @GHOSTH00D: Получено сообщение: 1500
+INFO 2025/08/24 21:19:51 logger.go:38: CMD @GHOSTH00D: Получено сообщение: Aaaa
+INFO 2025/08/24 21:20:42 logger.go:38: CMD @LONEl1st: Получено сообщение: /start
+INFO 2025/08/24 21:20:42 logger.go:38: CMD @LONEl1st: Команда /start
+INFO 2025/08/24 21:20:43 logger.go:49: BTN @GHOSTH00D: start_transaction
+INFO 2025/08/24 21:21:20 logger.go:49: BTN @GHOSTH00D: skip_comment
+INFO 2025/08/24 21:21:55 logger.go:49: BTN @LONEl1st: start_transaction
+INFO 2025/08/24 21:21:59 logger.go:49: BTN @LONEl1st: type_expense
+INFO 2025/08/24 21:37:30 logger.go:49: BTN @LONEl1st: cancel
+INFO 2025/08/24 21:37:35 logger.go:49: BTN @LONEl1st: show_savings
+INFO 2025/08/24 21:37:40 logger.go:49: BTN @LONEl1st: savings_stats
+INFO 2025/08/24 21:37:42 logger.go:49: BTN @LONEl1st: show_savings
+INFO 2025/08/24 21:37:44 logger.go:49: BTN @LONEl1st: main_menu
+INFO 2025/08/24 21:44:08 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/08/24 21:44:11 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/08/24 21:45:04 logger.go:38: CMD @LONEl1st: Получено сообщение: /start
+INFO 2025/08/24 21:45:04 logger.go:38: CMD @LONEl1st: Команда /start
+INFO 2025/08/24 21:45:06 logger.go:49: BTN @LONEl1st: start_transaction
+INFO 2025/08/24 21:45:12 logger.go:49: BTN @LONEl1st: cancel
+INFO 2025/08/24 21:45:15 logger.go:49: BTN @LONEl1st: show_settings
+INFO 2025/08/24 21:45:19 logger.go:49: BTN @LONEl1st: main_menu
+INFO 2025/08/24 21:45:22 logger.go:49: BTN @LONEl1st: show_savings
+INFO 2025/08/24 21:45:24 logger.go:49: BTN @LONEl1st: main_menu
+INFO 2025/08/24 21:45:26 logger.go:49: BTN @LONEl1st: show_settings
+INFO 2025/08/24 21:45:29 logger.go:49: BTN @LONEl1st: notification_settings
+INFO 2025/08/24 21:45:31 logger.go:49: BTN @LONEl1st: show_settings
+INFO 2025/08/24 21:45:32 logger.go:49: BTN @LONEl1st: manage_categories
+INFO 2025/08/24 21:45:34 logger.go:49: BTN @LONEl1st: show_settings
+INFO 2025/08/24 21:45:38 logger.go:49: BTN @LONEl1st: period_settings
+INFO 2025/08/24 21:45:40 logger.go:49: BTN @LONEl1st: settings_back
+INFO 2025/08/24 21:45:42 logger.go:49: BTN @LONEl1st: currency_settings
+INFO 2025/08/24 21:45:44 logger.go:49: BTN @LONEl1st: settings_back
+INFO 2025/08/24 21:45:46 logger.go:49: BTN @LONEl1st: main_menu
+INFO 2025/08/24 21:47:59 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/08/24 21:53:53 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/08/24 21:54:09 logger.go:38: CMD @LONEl1st: Получено сообщение: /start
+INFO 2025/08/24 21:54:09 logger.go:38: CMD @LONEl1st: Команда /start
+INFO 2025/08/24 21:54:11 logger.go:49: BTN @LONEl1st: start_transaction
+INFO 2025/08/24 21:54:15 logger.go:49: BTN @LONEl1st: cancel
+INFO 2025/08/24 21:54:19 logger.go:49: BTN @LONEl1st: show_savings
+INFO 2025/08/24 21:54:23 logger.go:49: BTN @LONEl1st: create_saving
+INFO 2025/08/24 21:54:27 logger.go:38: CMD @LONEl1st: Получено сообщение: 6глл
+INFO 2025/08/24 21:54:28 logger.go:49: BTN @LONEl1st: skip_saving_goal
+INFO 2025/08/24 21:54:31 logger.go:49: BTN @LONEl1st: manage_savings
+INFO 2025/08/24 21:54:33 logger.go:49: BTN @LONEl1st: edit_saving_11
+INFO 2025/08/24 21:54:34 logger.go:49: BTN @LONEl1st: saving_delete_11
+INFO 2025/08/24 21:54:37 logger.go:49: BTN @LONEl1st: saving_delete_11
+INFO 2025/08/24 21:54:39 logger.go:49: BTN @LONEl1st: saving_delete_11
+INFO 2025/08/24 21:54:40 logger.go:49: BTN @LONEl1st: savings_list
+INFO 2025/08/24 21:54:42 logger.go:49: BTN @LONEl1st: savings_list
+INFO 2025/08/24 21:56:04 logger.go:49: BTN @LONEl1st: show_savings
+INFO 2025/08/24 21:56:34 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/08/24 21:56:36 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/08/24 21:56:47 logger.go:38: CMD @LONEl1st: Получено сообщение: /start
+INFO 2025/08/24 21:56:47 logger.go:38: CMD @LONEl1st: Команда /start
+INFO 2025/08/24 21:56:49 logger.go:49: BTN @LONEl1st: start_transaction
+INFO 2025/08/24 21:56:52 logger.go:49: BTN @LONEl1st: main_menu
+INFO 2025/08/24 22:41:12 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/08/24 22:41:17 logger.go:49: BTN @LONEl1st: show_settings
+INFO 2025/08/24 22:41:22 logger.go:38: CMD @LONEl1st: Получено сообщение: /start
+INFO 2025/08/24 22:41:22 logger.go:38: CMD @LONEl1st: Команда /start
+INFO 2025/08/24 22:41:24 logger.go:49: BTN @LONEl1st: start_transaction
+INFO 2025/08/24 22:41:25 logger.go:49: BTN @LONEl1st: cancel
+INFO 2025/08/24 22:41:27 logger.go:38: CMD @LONEl1st: Получено сообщение: ➕ Добавить операцию
+INFO 2025/08/24 22:41:27 logger.go:38: CMD @LONEl1st: Кнопка: Добавить операцию
+INFO 2025/08/24 22:41:29 logger.go:49: BTN @LONEl1st: cancel
+INFO 2025/08/24 22:41:31 logger.go:38: CMD @LONEl1st: Получено сообщение: 📊 Статистика
+INFO 2025/08/24 22:41:31 logger.go:38: CMD @LONEl1st: Кнопка: Статистика
+INFO 2025/08/24 22:41:33 logger.go:49: BTN @LONEl1st: main_menu
+INFO 2025/08/24 22:42:12 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/08/24 23:03:52 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/08/24 23:04:01 logger.go:38: CMD @LONEl1st: Получено сообщение: /start
+INFO 2025/08/24 23:04:01 logger.go:38: CMD @LONEl1st: Команда /start
+INFO 2025/08/24 23:04:03 logger.go:49: BTN @LONEl1st: start_transaction
+INFO 2025/08/24 23:04:12 logger.go:38: CMD @LONEl1st: Получено сообщение: /start
+INFO 2025/08/24 23:04:12 logger.go:38: CMD @LONEl1st: Команда /start
+INFO 2025/08/24 23:04:15 logger.go:49: BTN @LONEl1st: start_transaction
+INFO 2025/08/24 23:04:16 logger.go:49: BTN @LONEl1st: cancel
+INFO 2025/08/24 23:04:19 logger.go:49: BTN @LONEl1st: show_settings
+INFO 2025/08/24 23:04:23 logger.go:49: BTN @LONEl1st: main_menu
+INFO 2025/08/24 23:04:26 logger.go:49: BTN @LONEl1st: start_transaction
+INFO 2025/08/24 23:04:28 logger.go:49: BTN @LONEl1st: type_income
+INFO 2025/08/24 23:04:29 logger.go:49: BTN @LONEl1st: cat_117
+INFO 2025/08/24 23:04:32 logger.go:38: CMD @LONEl1st: Получено сообщение: 44
+INFO 2025/08/24 23:04:33 logger.go:49: BTN @LONEl1st: skip_comment
+INFO 2025/08/24 23:04:35 logger.go:49: BTN @LONEl1st: show_stats
+INFO 2025/08/24 23:04:37 logger.go:49: BTN @LONEl1st: show_stats
+INFO 2025/08/24 23:12:37 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/08/24 23:12:42 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/08/24 23:12:50 logger.go:49: BTN @LONEl1st: skip_comment
+INFO 2025/08/24 23:12:55 logger.go:38: CMD @LONEl1st: Получено сообщение: /start
+INFO 2025/08/24 23:12:55 logger.go:38: CMD @LONEl1st: Команда /start
+INFO 2025/08/24 23:12:57 logger.go:49: BTN @LONEl1st: saving_tips
+INFO 2025/08/24 23:13:00 logger.go:49: BTN @LONEl1st: show_settings
+INFO 2025/08/24 23:13:18 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/08/24 23:17:49 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/08/24 23:17:56 logger.go:49: BTN @LONEl1st: manage_categories
+INFO 2025/08/24 23:17:58 logger.go:49: BTN @LONEl1st: settings_back
+INFO 2025/08/24 23:17:59 logger.go:49: BTN @LONEl1st: main_menu
+INFO 2025/08/24 23:18:02 logger.go:49: BTN @LONEl1st: show_stats
+INFO 2025/08/24 23:18:06 logger.go:49: BTN @LONEl1st: main_menu
+INFO 2025/08/24 23:18:07 logger.go:49: BTN @LONEl1st: show_savings
+INFO 2025/08/24 23:18:09 logger.go:49: BTN @LONEl1st: manage_savings
+INFO 2025/08/24 23:18:11 logger.go:49: BTN @LONEl1st: edit_saving_5
+INFO 2025/08/24 23:18:12 logger.go:49: BTN @LONEl1st: saving_withdraw_5
+INFO 2025/08/24 23:18:13 logger.go:49: BTN @LONEl1st: saving_add_5
+INFO 2025/08/24 23:18:14 logger.go:49: BTN @LONEl1st: saving_rename_5
+INFO 2025/08/24 23:18:15 logger.go:49: BTN @LONEl1st: saving_delete_5
+INFO 2025/08/24 23:18:16 logger.go:49: BTN @LONEl1st: savings_list
+INFO 2025/08/24 23:18:48 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...
+INFO 2025/08/24 23:25:37 logger.go:42: CMD user_0: Бот успешно запущен. Ожидание команд...
+INFO 2025/08/24 23:25:41 logger.go:49: BTN @LONEl1st: savings_list
+INFO 2025/08/24 23:25:43 logger.go:49: BTN @LONEl1st: savings_list
+INFO 2025/08/24 23:25:44 logger.go:49: BTN @LONEl1st: savings_list
+INFO 2025/08/24 23:25:45 logger.go:49: BTN @LONEl1st: savings_list
+INFO 2025/08/24 23:25:45 logger.go:49: BTN @LONEl1st: savings_list
+INFO 2025/08/24 23:25:48 logger.go:49: BTN @LONEl1st: saving_delete_5
+INFO 2025/08/24 23:25:50 logger.go:49: BTN @LONEl1st: show_savings
+INFO 2025/08/24 23:25:51 logger.go:49: BTN @LONEl1st: main_menu
+INFO 2025/08/24 23:25:52 logger.go:49: BTN @LONEl1st: show_savings
+INFO 2025/08/24 23:25:55 logger.go:49: BTN @LONEl1st: manage_savings
+INFO 2025/08/24 23:25:57 logger.go:49: BTN @LONEl1st: edit_saving_11
+INFO 2025/08/24 23:25:58 logger.go:49: BTN @LONEl1st: saving_add_11
+INFO 2025/08/24 23:26:01 logger.go:38: CMD @LONEl1st: Получено сообщение: 123
+INFO 2025/08/24 23:26:01 logger.go:38: CMD @LONEl1st: Текст сообщения: 123
+INFO 2025/08/24 23:26:05 logger.go:49: BTN @LONEl1st: manage_savings
+INFO 2025/08/24 23:26:07 logger.go:49: BTN @LONEl1st: edit_saving_11
+INFO 2025/08/24 23:26:08 logger.go:49: BTN @LONEl1st: saving_withdraw_11
+INFO 2025/08/24 23:26:09 logger.go:38: CMD @LONEl1st: Получено сообщение: 123
+INFO 2025/08/24 23:26:09 logger.go:38: CMD @LONEl1st: Текст сообщения: 123
+INFO 2025/08/24 23:26:12 logger.go:49: BTN @LONEl1st: saving_rename_11
+INFO 2025/08/24 23:26:14 logger.go:38: CMD @LONEl1st: Получено сообщение: 1231231
+INFO 2025/08/24 23:26:14 logger.go:38: CMD @LONEl1st: Текст сообщения: 1231231
+INFO 2025/08/24 23:26:15 logger.go:49: BTN @LONEl1st: edit_saving_11
+INFO 2025/08/24 23:26:16 logger.go:49: BTN @LONEl1st: saving_delete_11
+INFO 2025/08/24 23:26:17 logger.go:49: BTN @LONEl1st: show_savings
+INFO 2025/08/24 23:26:19 logger.go:49: BTN @LONEl1st: main_menu
+INFO 2025/08/24 23:26:31 logger.go:38: CMD @LONEl1st: Получено сообщение: /start
+INFO 2025/08/24 23:26:31 logger.go:38: CMD @LONEl1st: Команда /start
+INFO 2025/08/24 23:26:33 logger.go:49: BTN @LONEl1st: saving_tips
+INFO 2025/08/24 23:26:37 logger.go:49: BTN @LONEl1st: show_stats
+INFO 2025/08/24 23:26:39 logger.go:49: BTN @LONEl1st: stats_year
+INFO 2025/08/24 23:26:39 logger.go:53: BTN user_970147668: Статистика за год
+INFO 2025/08/24 23:26:42 logger.go:49: BTN @LONEl1st: stats_back
+INFO 2025/08/24 23:26:42 logger.go:49: BTN @LONEl1st: main_menu
+INFO 2025/08/24 23:27:06 logger.go:42: CMD user_0: Получен сигнал завершения. Остановка бота...

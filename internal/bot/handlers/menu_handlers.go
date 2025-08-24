@@ -54,26 +54,6 @@ func (b *Bot) startAddToSaving(chatID int64, svc *service.FinanceService) {
 	b.send(chatID, msg)
 }
 
-func (b *Bot) createSavingsKeyboard() tgbotapi.InlineKeyboardMarkup {
-	return tgbotapi.NewInlineKeyboardMarkup(
-		[]tgbotapi.InlineKeyboardButton{
-			tgbotapi.NewInlineKeyboardButtonData("➕ Новая копилка", "create_saving"),
-		},
-		[]tgbotapi.InlineKeyboardButton{
-			tgbotapi.NewInlineKeyboardButtonData("💰 Пополнить", "add_to_saving"),
-		},
-		[]tgbotapi.InlineKeyboardButton{
-			tgbotapi.NewInlineKeyboardButtonData("📊 Статистика", "savings_stats"),
-		},
-		[]tgbotapi.InlineKeyboardButton{
-			tgbotapi.NewInlineKeyboardButtonData("✏️ Редактировать", "manage_savings"),
-		},
-		[]tgbotapi.InlineKeyboardButton{
-			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "main_menu"),
-		},
-	)
-}
-
 func (b *Bot) showSavingsManagement(chatID int64, svc *service.FinanceService) {
 	savings, err := svc.GetSavings()
 	if err != nil {
@@ -94,7 +74,7 @@ func (b *Bot) showSavingsManagement(chatID int64, svc *service.FinanceService) {
 	}
 
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "show_savings"),
+		tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "show_savings"), // Возврат к копилкам
 	))
 
 	msg := tgbotapi.NewMessage(chatID, "✏️ <b>Редактирование копилок</b>\n\nВыберите копилку:")
@@ -112,11 +92,13 @@ func (b *Bot) showSavingActions(chatID int64, savingID int, svc *service.Finance
 
 	formattedAmount := b.formatCurrency(saving.Amount, chatID)
 	msgText := fmt.Sprintf("📌 <b>%s</b>\nТекущая сумма: %s", saving.Name, formattedAmount)
+
 	if saving.Goal != nil {
 		progress := saving.Progress()
 		formattedGoal := b.formatCurrency(*saving.Goal, chatID)
 		msgText += fmt.Sprintf("\nЦель: %s (%.1f%%)", formattedGoal, progress)
 	}
+
 	if saving.Comment != "" {
 		msgText += fmt.Sprintf("\nКомментарий: %s", saving.Comment)
 	}
@@ -133,15 +115,11 @@ func (b *Bot) showSavingActions(chatID int64, savingID int, svc *service.Finance
 			tgbotapi.NewInlineKeyboardButtonData("🗑 Удалить", fmt.Sprintf("saving_delete_%d", savingID)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "savings_list"),
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "manage_savings"),
 		),
 	)
 
-	if _, err := b.bot.Send(msg); err != nil {
-		logger.LogError(chatID, fmt.Sprintf("Ошибка отправки сообщения showSavingActions: %v", err))
-		b.sendError(chatID, err)
-		return
-	}
+	b.send(chatID, msg)
 }
 
 func (b *Bot) handleDeleteSaving(chatID int64, savingID int, messageID int, svc *service.FinanceService) {
@@ -268,6 +246,7 @@ func (b *Bot) showSettingsMenu(chatID int64) {
 		{tgbotapi.NewInlineKeyboardButtonData("💱 Валюта", CallbackCurrencySettings)},
 		{tgbotapi.NewInlineKeyboardButtonData("🆘 Поддержка", "support")},
 		{tgbotapi.NewInlineKeyboardButtonData("🧹 Очистить все данные", "confirm_clear_data")},
+		{tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "main_menu")},
 	}
 
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(keyboard...)
@@ -458,15 +437,16 @@ func (b *Bot) showCategoryActions(chatID int64, categoryID int, svc *service.Fin
 }
 
 func (b *Bot) showReportPeriodMenu(chatID int64) {
-	msg := tgbotapi.NewMessage(chatID, "📊 Выберите период для статистики:")
+	msg := tgbotapi.NewMessage(chatID, "📊 <b>Выбери период для статистики:</b>")
+	msg.ParseMode = "HTML"
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("День", "stats_day"),
-			tgbotapi.NewInlineKeyboardButtonData("Неделя", "stats_week"),
+			tgbotapi.NewInlineKeyboardButtonData("📅 День", "stats_day"),
+			tgbotapi.NewInlineKeyboardButtonData("📆 Неделя", "stats_week"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Месяц", "stats_month"),
-			tgbotapi.NewInlineKeyboardButtonData("Год", "stats_year"),
+			tgbotapi.NewInlineKeyboardButtonData("📈 Месяц", "stats_month"),
+			tgbotapi.NewInlineKeyboardButtonData("🎯 Год", "stats_year"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "main_menu"),
@@ -628,7 +608,23 @@ func (b *Bot) showSavings(chatID int64, svc *service.FinanceService) {
 
 	msg := tgbotapi.NewMessage(chatID, msgText.String())
 	msg.ParseMode = "Markdown"
-	msg.ReplyMarkup = b.createSavingsKeyboard()
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("➕ Новая копилка", "create_saving"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("💰 Пополнить", "add_to_saving"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📊 Статистика", "savings_stats"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("✏️ Редактировать", "manage_savings"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "main_menu"), // Кнопка назад
+		),
+	)
 	b.send(chatID, msg)
 }
 
