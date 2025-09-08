@@ -94,9 +94,9 @@ func (b *Bot) showSavingActions(chatID int64, savingID int, svc *service.Finance
 	msgText := fmt.Sprintf("📌 <b>%s</b>\nТекущая сумма: %s", saving.Name, formattedAmount)
 
 	if saving.Goal != nil {
-		progress := saving.Progress()
+		progress := b.renderProgressBar(saving.Progress(), 10)
 		formattedGoal := b.formatCurrency(*saving.Goal, chatID)
-		msgText += fmt.Sprintf("\nЦель: %s (%.1f%%)", formattedGoal, progress)
+		msgText += fmt.Sprintf("\nЦель: %s (%s)", formattedGoal, progress)
 	}
 
 	if saving.Comment != "" {
@@ -123,23 +123,42 @@ func (b *Bot) showSavingActions(chatID int64, savingID int, svc *service.Finance
 }
 
 func (b *Bot) handleDeleteSaving(chatID int64, savingID int, messageID int, svc *service.FinanceService) {
-	err := svc.DeleteSaving(savingID)
+	saving, err := svc.GetSavingByID(savingID)
+	if err != nil {
+		b.sendError(chatID, err)
+		return
+	}
+	if saving == nil {
+		b.sendError(chatID, fmt.Errorf("копилка не найдена"))
+		return
+	}
+
+	err = svc.DeleteSaving(savingID)
 	if err != nil {
 		b.sendError(chatID, err)
 		return
 	}
 
-	edit := tgbotapi.NewEditMessageTextAndMarkup(
-		chatID,
-		messageID,
-		"✅ Копилка удалена!",
-		tgbotapi.NewInlineKeyboardMarkup(
-			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("◀️ К списку копилок", "manage_savings"),
-			),
+	text := "✅ Копилка удалена!"
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("◀️ К списку копилок", "manage_savings"),
 		),
 	)
-	b.send(chatID, edit)
+
+	if messageID > 0 {
+		edit := tgbotapi.NewEditMessageTextAndMarkup(
+			chatID,
+			messageID,
+			text,
+			keyboard,
+		)
+		b.send(chatID, edit)
+	} else {
+		msg := tgbotapi.NewMessage(chatID, text)
+		msg.ReplyMarkup = keyboard
+		b.send(chatID, msg)
+	}
 }
 
 func (b *Bot) handleClearSaving(chatID int64, savingID int, messageID int, svc *service.FinanceService) {

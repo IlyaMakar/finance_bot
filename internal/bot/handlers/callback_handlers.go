@@ -17,6 +17,9 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	chatID := q.From.ID
 	data := q.Data
 
+	// Логирование нажатия кнопки
+	logger.LogButtonClickByID(chatID, data)
+
 	user, err := b.repo.GetOrCreateUser(
 		q.From.ID,
 		q.From.UserName,
@@ -85,7 +88,6 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 
 	svc := service.NewService(b.repo, user)
 
-	logger.LogButtonClick(q.From.UserName, data)
 	if data == CallbackManageSavings {
 		b.showSavingsManagement(q.From.ID, svc)
 		return

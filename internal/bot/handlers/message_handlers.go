@@ -370,6 +370,9 @@ func (b *Bot) handleComment(m *tgbotapi.Message, svc *service.FinanceService) {
 
 	formattedAmount := b.formatCurrency(amount, m.Chat.ID)
 
+	// Логирование транзакции
+	logger.LogTransaction(m.From.ID, amount, categoryName)
+
 	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID,
 		fmt.Sprintf("✅ %s: %s, %s", operationType, categoryName, formattedAmount)))
 
@@ -401,6 +404,9 @@ func (b *Bot) handleSavingAmount(m *tgbotapi.Message, svc *service.FinanceServic
 
 	formattedAmount := b.formatCurrency(amount, m.Chat.ID)
 	formattedNewAmount := b.formatCurrency(newAmount, m.Chat.ID)
+
+	// Логирование операции с копилкой
+	logger.LogSaving(m.From.ID, "Пополнение", amount, saving.Name)
 
 	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID,
 		fmt.Sprintf("✅ Копилка '%s' пополнена на %s!\n💰 Новый баланс: %s", saving.Name, formattedAmount, formattedNewAmount)))
@@ -472,6 +478,9 @@ func (b *Bot) handleCreateSavingGoal(m *tgbotapi.Message) {
 		b.sendError(m.Chat.ID, err)
 		return
 	}
+
+	// Логирование создания копилки
+	logger.LogSaving(m.From.ID, "Создание", 0, s.TempComment)
 
 	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "🎉 Копилка создана!"))
 

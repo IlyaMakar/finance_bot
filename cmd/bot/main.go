@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -21,10 +20,13 @@ import (
 
 func main() {
 	logger.Init()
+	logger.LogStartup()
+
 	defer func() {
 		if r := recover(); r != nil {
 			logger.LogError("system", fmt.Sprintf("PANIC: %v", r))
 		}
+		logger.LogShutdown()
 	}()
 
 	err := godotenv.Load()
@@ -79,198 +81,45 @@ func main() {
 		log.Fatalf("Ошибка загрузки временной зоны: %v", err)
 	}
 
-	printInitialStats(db, loc)
+	printSimpleStats(db, loc) // Упрощенная статистика
 
 	go botInstance.Start()
 	go startReminder(botInstance, repo, isTestMode)
-	go startBackgroundStats(botInstance.GetRepo(), loc)
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
 	logger.LogCommandByID(0, "Бот успешно запущен. Ожидание команд...")
+	log.Println("Завершение работы...")
+
 	<-quit
 	logger.LogCommandByID(0, "Получен сигнал завершения. Остановка бота...")
-	log.Println("Завершение работы...")
 }
 
-func printInitialStats(db *sql.DB, loc *time.Location) {
+// Упрощенная статистика при запуске
+func printSimpleStats(db *sql.DB, loc *time.Location) {
 	now := time.Now().In(loc)
-	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-	lastMonthStart := time.Date(now.Year(), now.Month()-1, 1, 0, 0, 0, 0, loc)
-	lastMonthEnd := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc)
 
-	var newUsersToday, totalUsers, activeUsers, lastMonthActive int
-	var todayButtonClicks, allTimeButtonClicks, lastMonthClicks map[string]int
-	var totalTodayClicks, totalAllTimeClicks int
-
-	err := db.QueryRow(`
-		SELECT COUNT(*) FROM users WHERE created_at >= ? AND created_at < ?
-	`, startOfDay.Format(time.RFC3339), startOfDay.AddDate(0, 0, 1).Format(time.RFC3339)).Scan(&newUsersToday)
+	var totalUsers int
+	err := db.QueryRow("SELECT COUNT(*) FROM users").Scan(&totalUsers)
 	if err != nil {
-		log.Printf("Ошибка при подсчете новых пользователей: %v", err)
-		newUsersToday = 0
-	}
-
-	err = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&totalUsers)
-	if err != nil {
-		log.Printf("Ошибка при подсчете общего числа пользователей: %v", err)
+		logger.LogError("system", fmt.Sprintf("Ошибка подсчета пользователей: %v", err))
 		totalUsers = 0
 	}
 
+	var activeUsers int
 	err = db.QueryRow(`
 		SELECT COUNT(*) FROM user_activity WHERE last_active >= ?
 	`, now.Add(-24*time.Hour).Format(time.RFC3339)).Scan(&activeUsers)
 	if err != nil {
-		log.Printf("Ошибка при подсчете активных пользователей: %v", err)
+		logger.LogError("system", fmt.Sprintf("Ошибка подсчета активных пользователей: %v", err))
 		activeUsers = 0
 	}
-	inactiveUsers := totalUsers - activeUsers
 
-	rows, err := db.Query(`
-		SELECT button_name, COUNT(*) FROM button_clicks WHERE click_time >= ? GROUP BY button_name
-	`, startOfDay.Format(time.RFC3339))
-	if err != nil {
-		log.Printf("Ошибка при подсчете кликов за сегодня: %v", err)
-	} else {
-		defer rows.Close()
-		todayButtonClicks = make(map[string]int)
-		for rows.Next() {
-			var buttonName string
-			var count int
-			if err := rows.Scan(&buttonName, &count); err != nil {
-				log.Printf("Ошибка при сканировании кликов: %v", err)
-				continue
-			}
-			todayButtonClicks[buttonName] = count
-			totalTodayClicks += count
-		}
-	}
-
-	rows, err = db.Query(`
-		SELECT button_name, COUNT(*) FROM button_clicks GROUP BY button_name
-	`)
-	if err != nil {
-		log.Printf("Ошибка при подсчете кликов за все время: %v", err)
-	} else {
-		defer rows.Close()
-		allTimeButtonClicks = make(map[string]int)
-		for rows.Next() {
-			var buttonName string
-			var count int
-			if err := rows.Scan(&buttonName, &count); err != nil {
-				log.Printf("Ошибка при сканировании кликов: %v", err)
-				continue
-			}
-			allTimeButtonClicks[buttonName] = count
-			totalAllTimeClicks += count
-		}
-	}
-
-	err = db.QueryRow(`
-		SELECT COUNT(*) FROM user_activity WHERE last_active >= ? AND last_active < ?
-	`, lastMonthStart.Format(time.RFC3339), lastMonthEnd.Format(time.RFC3339)).Scan(&lastMonthActive)
-	if err != nil {
-		log.Printf("Ошибка при подсчете активности прошлого месяца: %v", err)
-		lastMonthActive = 0
-	}
-	activityChange := 0.0
-	if lastMonthActive > 0 {
-		activityChange = (float64(activeUsers) - float64(lastMonthActive)) / float64(lastMonthActive) * 100
-	}
-
-	rows, err = db.Query(`
-		SELECT button_name, COUNT(*) FROM button_clicks WHERE click_time >= ? AND click_time < ? GROUP BY button_name
-	`, lastMonthStart.Format(time.RFC3339), lastMonthEnd.Format(time.RFC3339))
-	if err != nil {
-		log.Printf("Ошибка при подсчете кликов прошлого месяца: %v", err)
-	} else {
-		defer rows.Close()
-		lastMonthClicks = make(map[string]int)
-		for rows.Next() {
-			var buttonName string
-			var count int
-			if err := rows.Scan(&buttonName, &count); err != nil {
-				log.Printf("Ошибка при сканировании кликов: %v", err)
-				continue
-			}
-			lastMonthClicks[buttonName] = count
-		}
-	}
-
-	fmt.Println("=== Статистика бота при старте ===")
-	fmt.Printf("Дата и время: %s\n", now.Format("02.01.2006 15:04"))
-	fmt.Printf("Новых пользователей за сегодня: %d\n", newUsersToday)
-	fmt.Printf("Общее количество пользователей: %d\n", totalUsers)
-	fmt.Printf("Активных пользователей (за 24 часа): %d (%.2f%% от прошлого месяца)\n", activeUsers, activityChange)
-	fmt.Printf("Неактивных пользователей: %d\n", inactiveUsers)
-	fmt.Printf("Общее количество кликов за сегодня: %d\n", totalTodayClicks)
-	for button, count := range todayButtonClicks {
-		last := lastMonthClicks[button]
-		change := 0.0
-		if last > 0 {
-			change = (float64(count) - float64(last)) / float64(last) * 100
-		} else if count > 0 {
-			change = 100.0
-		}
-		fmt.Printf("Клик по %s за сегодня: %d (%.2f%% от прошлого месяца)\n", button, count, change)
-	}
-	fmt.Printf("Общее количество кликов за все время: %d\n", totalAllTimeClicks)
-	for button, count := range allTimeButtonClicks {
-		last := lastMonthClicks[button]
-		change := 0.0
-		if last > 0 {
-			change = (float64(count) - float64(last)) / float64(last) * 100
-		} else if count > 0 {
-			change = 100.0
-		}
-		fmt.Printf("Клик по %s за все время: %d (%.2f%% от прошлого месяца)\n", button, count, change)
-	}
-
-	logDir := "logs"
-	if _, err := os.Stat(logDir); os.IsNotExist(err) {
-		err = os.MkdirAll(logDir, 0755)
-		if err != nil {
-			log.Printf("Ошибка создания папки logs: %v", err)
-			return
-		}
-	}
-
-	logFilePath := filepath.Join(logDir, "stats.log")
-	logFile, err := os.OpenFile(logFilePath, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Printf("Ошибка открытия файла логов: %v", err)
-		return
-	}
-	defer logFile.Close()
-
-	logger := log.New(logFile, "STATS ", log.Ldate|log.Ltime)
-	logger.Printf("=== Статистика бота при старте ===\n")
-	logger.Printf("Дата и время: %s\n", now.Format("02.01.2006 15:04"))
-	logger.Printf("Новых пользователей за сегодня: %d\n", newUsersToday)
-	logger.Printf("Общее количество пользователей: %d\n", totalUsers)
-	logger.Printf("Активных пользователей (за 24 часа): %d (%.2f%% от прошлого месяца)\n", activeUsers, activityChange)
-	logger.Printf("Неактивных пользователей: %d\n", inactiveUsers)
-	logger.Printf("Общее количество кликов за сегодня: %d\n", totalTodayClicks)
-	for button, count := range todayButtonClicks {
-		last := lastMonthClicks[button]
-		change := 0.0
-		if last > 0 {
-			change = (float64(count) - float64(last)) / float64(last) * 100
-		} else if count > 0 {
-			change = 100.0
-		}
-		logger.Printf("Клик по %s за сегодня: %d (%.2f%% от прошлого месяца)\n", button, count, change)
-	}
-	logger.Printf("Общее количество кликов за все время: %d\n", totalAllTimeClicks)
-	for button, count := range allTimeButtonClicks {
-		last := lastMonthClicks[button]
-		change := 0.0
-		if last > 0 {
-			change = (float64(count) - float64(last)) / float64(last) * 100
-		} else if count > 0 {
-			change = 100.0
-		}
-		logger.Printf("Клик по %s за все время: %d (%.2f%% от прошлого месяца)\n", button, count, change)
-	}
+	logger.LogSystem(fmt.Sprintf("📊 Статистика при запуске - Дата: %s", now.Format("02.01.2006 15:04")))
+	logger.LogSystem(fmt.Sprintf("👥 Всего пользователей: %d", totalUsers))
+	logger.LogSystem(fmt.Sprintf("🎯 Активных за 24ч: %d", activeUsers))
+	logger.LogSystem("========================================")
 }
 
 func startReminder(botInstance *handlers.Bot, repo *repository.SQLiteRepository, testMode bool) {
@@ -300,7 +149,7 @@ func startReminder(botInstance *handlers.Bot, repo *repository.SQLiteRepository,
 			continue
 		}
 
-		logger.LogCommandByID(0, "Проверка напоминаний...")
+		logger.LogReminder("Проверка напоминаний...")
 		users, err := repo.GetAllUsers()
 		if err != nil {
 			logger.LogError("system", fmt.Sprintf("Reminder error getting users: %v", err))
@@ -325,83 +174,10 @@ func startReminder(botInstance *handlers.Bot, repo *repository.SQLiteRepository,
 			}
 
 			if !hasTransactions {
-				logger.LogCommandByID(user.TelegramID, "Отправка напоминания")
+				logger.LogReminder(fmt.Sprintf("Отправка напоминания user_%d", user.TelegramID))
 				sendReminderMessage(botInstance, user.TelegramID, testMode)
 			}
 		}
-	}
-}
-
-func startBackgroundStats(repo *repository.SQLiteRepository, loc *time.Location) {
-	ticker := time.NewTicker(2 * time.Hour)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		now := time.Now().In(loc)
-		startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-		lastMonthStart := time.Date(now.Year(), now.Month()-1, 1, 0, 0, 0, 0, loc)
-		lastMonthEnd := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc)
-
-		var activeUsers, lastMonthActive int
-		var todayButtonClicks, lastMonthClicks map[string]int
-		var totalTodayClicks int
-
-		if err := repo.GetActiveUsersCount(now.Add(-24*time.Hour), &activeUsers); err != nil {
-			logger.LogError("system", fmt.Sprintf("Ошибка подсчета активных пользователей: %v", err))
-			continue
-		}
-
-		if err := repo.GetButtonClicksCount(startOfDay, &todayButtonClicks); err != nil {
-			logger.LogError("system", fmt.Sprintf("Ошибка подсчета кликов за сегодня: %v", err))
-			continue
-		}
-		for _, count := range todayButtonClicks {
-			totalTodayClicks += count
-		}
-
-		if err := repo.GetActiveUsersCountForPeriod(lastMonthStart, lastMonthEnd, &lastMonthActive); err != nil {
-			logger.LogError("system", fmt.Sprintf("Ошибка подсчета активности прошлого месяца: %v", err))
-			continue
-		}
-		activityChange := 0.0
-		if lastMonthActive > 0 {
-			activityChange = (float64(activeUsers) - float64(lastMonthActive)) / float64(lastMonthActive) * 100
-		}
-
-		if err := repo.GetButtonClicksCountForPeriod(lastMonthStart, lastMonthEnd, &lastMonthClicks); err != nil {
-			logger.LogError("system", fmt.Sprintf("Ошибка подсчета кликов прошлого месяца: %v", err))
-			continue
-		}
-
-		logDir := "logs"
-		if _, err := os.Stat(logDir); os.IsNotExist(err) {
-			if err := os.MkdirAll(logDir, 0755); err != nil {
-				log.Printf("Ошибка создания папки logs: %v", err)
-				continue
-			}
-		}
-
-		logFilePath := filepath.Join(logDir, "stats.log")
-		logFile, err := os.OpenFile(logFilePath, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			log.Printf("Ошибка открытия файла логов: %v", err)
-			continue
-		}
-		logger := log.New(logFile, "STATS ", log.Ldate|log.Ltime)
-		logger.Printf("=== Статистика бота на %s ===\n", now.Format("02.01.2006 15:04"))
-		logger.Printf("Активных пользователей (за 24 часа): %d (%.2f%% от прошлого месяца)\n", activeUsers, activityChange)
-		logger.Printf("Общее количество кликов за сегодня: %d\n", totalTodayClicks)
-		for button, count := range todayButtonClicks {
-			last := lastMonthClicks[button]
-			change := 0.0
-			if last > 0 {
-				change = (float64(count) - float64(last)) / float64(last) * 100
-			} else if count > 0 {
-				change = 100.0
-			}
-			logger.Printf("Клик по %s за сегодня: %d (%.2f%% от прошлого месяца)\n", button, count, change)
-		}
-		logFile.Close()
 	}
 }
 
@@ -410,7 +186,7 @@ func sendTestReminder(botInstance *handlers.Bot, repo *repository.SQLiteReposito
 		return
 	}
 
-	logger.LogCommandByID(0, "Отправка тестовых напоминаний")
+	logger.LogReminder("Отправка тестовых напоминаний")
 	users, err := repo.GetAllUsers()
 	if err != nil {
 		logger.LogError("system", fmt.Sprintf("Test reminder error getting users: %v", err))
@@ -418,7 +194,7 @@ func sendTestReminder(botInstance *handlers.Bot, repo *repository.SQLiteReposito
 	}
 
 	for _, user := range users {
-		logger.LogCommandByID(user.TelegramID, "Отправка тестового напоминания")
+		logger.LogReminder(fmt.Sprintf("Отправка тестового напоминания user_%d", user.TelegramID))
 		msg := tgbotapi.NewMessage(
 			user.TelegramID,
 			"🔔 <b>Тестовое напоминание</b>\n\n"+
