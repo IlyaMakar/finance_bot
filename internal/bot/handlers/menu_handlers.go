@@ -261,7 +261,7 @@ func (b *Bot) showSettingsMenu(chatID int64) {
 	keyboard := [][]tgbotapi.InlineKeyboardButton{
 		{tgbotapi.NewInlineKeyboardButtonData("🔔 Уведомления", "notification_settings")},
 		{tgbotapi.NewInlineKeyboardButtonData("📝 Категории", "manage_categories")},
-		{tgbotapi.NewInlineKeyboardButtonData("📅 Период отчётов", "period_settings")},
+		{tgbotapi.NewInlineKeyboardButtonData("📅 Период отчётов", CallbackSetPeriodStart)}, // Изменено с "period_settings" на CallbackSetPeriodStart
 		{tgbotapi.NewInlineKeyboardButtonData("💱 Валюта", CallbackCurrencySettings)},
 		{tgbotapi.NewInlineKeyboardButtonData("🆘 Поддержка", "support")},
 		{tgbotapi.NewInlineKeyboardButtonData("🧹 Очистить все данные", "confirm_clear_data")},

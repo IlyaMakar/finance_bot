@@ -152,20 +152,24 @@ func (b *Bot) handleUserInput(m *tgbotapi.Message, svc *service.FinanceService) 
 	case "enter_period_start_day":
 		user, err := b.repo.GetOrCreateUser(m.Chat.ID, m.From.UserName, m.From.FirstName, m.From.LastName)
 		if err != nil {
+			logger.LogError(fmt.Sprintf("user_%d", m.Chat.ID), fmt.Sprintf("Ошибка получения пользователя: %v", err))
 			b.sendError(m.Chat.ID, err)
 			return
 		}
 		day, err := strconv.ParseInt(m.Text, 10, 32)
 		if err != nil || day < 1 || day > 31 {
+			logger.LogError(fmt.Sprintf("user_%d", m.Chat.ID), fmt.Sprintf("Некорректный ввод дня: %s", m.Text))
 			b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "⚠️ Введите число от 1 до 31:"))
 			return
 		}
 		svc := service.NewService(b.repo, user)
 		err = svc.SetPeriodStartDay(int(day))
 		if err != nil {
+			logger.LogError(fmt.Sprintf("user_%d", m.Chat.ID), fmt.Sprintf("Ошибка установки дня периода: %v", err))
 			b.sendError(m.Chat.ID, err)
 			return
 		}
+		logger.LogCommandByID(m.Chat.ID, fmt.Sprintf("Установлен день периода: %d", day))
 		b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, fmt.Sprintf("✅ Начало периода установлено на %d-е число.", day)))
 		delete(userStates, m.From.ID)
 		b.showSettingsMenu(m.Chat.ID)
