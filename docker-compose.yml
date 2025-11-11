@@ -1,12 +1,54 @@
+version: '3.8'
+
 services:
   bot:
-    build: .
+    build: 
+      context: .
+      dockerfile: Dockerfile
     container_name: finance_bot
     restart: unless-stopped
     volumes:
-       - ./finance.db:/app/finance.db
+      - ./finance.db:/app/finance.db
+      - ./fonts:/app/fonts
+      - ./logs:/app/logs
     env_file:
       - .env
+    environment:
+      - BOT_API_URL=http://bot:8080  # Для внутренней связи
+    ports:
+      - "8080:8080"  # API для админки
+    networks:
+      - finance_network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  admin:
+    build: 
+      context: .
+      dockerfile: Dockerfile.admin
+    container_name: finance_admin
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    environment:
+      - BOT_API_URL=http://bot:8080  # Внутри Docker сети
+    ports:
+      - "3000:3000"  # Веб-интерфейс админки
+    depends_on:
+      bot:
+        condition: service_healthy
+    networks:
+      - finance_network
+
+networks:
+  finance_network:
+    driver: bridge
 
 volumes:
   finance_db:

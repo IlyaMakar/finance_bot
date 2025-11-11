@@ -2,138 +2,185 @@ package logger
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
-	"sync"
+	"runtime"
+	"strings"
 	"time"
 )
 
-var (
-	once        sync.Once
-	infoLogger  *log.Logger
-	errorLogger *log.Logger
-	debugLogger *log.Logger
-	currentDate string
-	logFile     *os.File
-	mu          sync.Mutex
+type LogLevel int
+
+const (
+	DEBUG LogLevel = iota
+	INFO
+	WARN
+	ERROR
+	FATAL
 )
 
-func Init() {
-	once.Do(func() {
-		initLoggers()
-		go startDailyRotation()
-	})
+var (
+	logInstance *Logger
+	levelNames  = map[LogLevel]string{
+		DEBUG: "DEBUG",
+		INFO:  "INFO",
+		WARN:  "WARN",
+		ERROR: "ERROR",
+		FATAL: "FATAL",
+	}
+	levelColors = map[LogLevel]string{
+		DEBUG: "\033[36m",
+		INFO:  "\033[32m",
+		WARN:  "\033[33m",
+		ERROR: "\033[31m",
+		FATAL: "\033[35m",
+	}
+	resetColor = "\033[0m"
+)
+
+type Logger struct {
+	*log.Logger
+	level    LogLevel
+	file     *os.File
+	filename string
 }
 
-func initLoggers() {
-	mu.Lock()
-	defer mu.Unlock()
+func Init(logLevel string, logToFile bool) error {
+	level := getLevelFromString(logLevel)
 
-	if logFile != nil {
-		logFile.Close()
+	var logFile *os.File
+	var filename string
+
+	if logToFile {
+		if err := os.MkdirAll("logs", 0755); err != nil {
+			return fmt.Errorf("failed to create logs directory: %v", err)
+		}
+
+		filename = filepath.Join("logs", fmt.Sprintf("bot_%s.log", time.Now().Format("2006-01-02")))
+
+		file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			return fmt.Errorf("failed to open log file: %v", err)
+		}
+		logFile = file
 	}
 
-	currentDate = time.Now().Format("2006-01-02")
-	logDir := "logs"
-
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		log.Printf("Не удалось создать папку logs: %v", err)
-		return
+	logInstance = &Logger{
+		Logger:   log.New(logFile, "", 0),
+		level:    level,
+		file:     logFile,
+		filename: filename,
 	}
 
-	logFilePath := filepath.Join(logDir, fmt.Sprintf("bot_%s.log", currentDate))
-
-	var err error
-	logFile, err = os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		log.Printf("Не удалось открыть файл логов: %v", err)
-		return
+	if logToFile {
+		logInstance.Logger.SetOutput(os.Stdout)
 	}
 
-	multiWriter := io.MultiWriter(os.Stdout, logFile)
-
-	infoLogger = log.New(multiWriter, "INFO  ", log.Ldate|log.Ltime)
-	errorLogger = log.New(multiWriter, "ERROR ", log.Ldate|log.Ltime)
-	debugLogger = log.New(multiWriter, "DEBUG ", log.Ldate|log.Ltime)
-
-	infoLogger.Printf("🚀 Логгер инициализирован для даты %s", currentDate)
+	Info("Logger initialized", "level", levelNames[level], "file", filename)
+	return nil
 }
 
-func startDailyRotation() {
-	for {
-		now := time.Now()
-		nextDay := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 1, 0, now.Location())
-		durationUntilNextDay := nextDay.Sub(now)
-
-		time.Sleep(durationUntilNextDay)
-		initLoggers()
-	}
-}
-
-func LogCommand(username string, command string) {
-	if username == "" {
-		username = "unknown"
-	}
-	infoLogger.Printf("💬 CMD @%s: %s", username, command)
-}
-
-func LogCommandByID(userID int64, command string) {
-	infoLogger.Printf("💬 CMD user_%d: %s", userID, command)
-}
-
-func LogButtonClick(username string, buttonName string) {
-	if username == "" {
-		username = "unknown"
-	}
-	infoLogger.Printf("🔘 BTN @%s: %s", username, buttonName)
-}
-
-func LogButtonClickByID(userID int64, buttonName string) {
-	infoLogger.Printf("🔘 BTN user_%d: %s", userID, buttonName)
-}
-
-func LogError(userIdentifier interface{}, errorMsg string) {
-	var userStr string
-	switch v := userIdentifier.(type) {
-	case string:
-		userStr = v
-	case int64:
-		userStr = "user_" + strconv.FormatInt(v, 10)
-	case int:
-		userStr = "user_" + strconv.Itoa(v)
+func getLevelFromString(level string) LogLevel {
+	switch strings.ToUpper(level) {
+	case "DEBUG":
+		return DEBUG
+	case "INFO":
+		return INFO
+	case "WARN":
+		return WARN
+	case "ERROR":
+		return ERROR
+	case "FATAL":
+		return FATAL
 	default:
-		userStr = "unknown"
+		return INFO
 	}
-	errorLogger.Printf("❌ ERR %s: %s", userStr, errorMsg)
 }
 
-func LogSystem(message string) {
-	infoLogger.Printf("⚙️  SYS: %s", message)
+func (l *Logger) log(level LogLevel, msg string, fields ...interface{}) {
+	if level < l.level {
+		return
+	}
+
+	_, file, line, ok := runtime.Caller(2)
+	if !ok {
+		file = "unknown"
+		line = 0
+	} else {
+
+		file = filepath.Base(file)
+	}
+
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	levelName := levelNames[level]
+	levelColor := levelColors[level]
+
+	var fieldsStr string
+	if len(fields) > 0 {
+		var fieldParts []string
+		for i := 0; i < len(fields); i += 2 {
+			if i+1 < len(fields) {
+				fieldParts = append(fieldParts, fmt.Sprintf("%v=%v", fields[i], fields[i+1]))
+			} else {
+				fieldParts = append(fieldParts, fmt.Sprintf("%v", fields[i]))
+			}
+		}
+		fieldsStr = " [" + strings.Join(fieldParts, " ") + "]"
+	}
+
+	consoleMsg := fmt.Sprintf("%s%-5s%s %s %s:%d %s%s",
+		levelColor, levelName, resetColor,
+		timestamp,
+		file, line,
+		msg, fieldsStr)
+
+	fileMsg := fmt.Sprintf("%-5s %s %s:%d %s%s",
+		levelName,
+		timestamp,
+		file, line,
+		msg, fieldsStr)
+
+	fmt.Println(consoleMsg)
+
+	if l.file != nil {
+		l.Logger.Println(fileMsg)
+	}
 }
 
-func LogStartup() {
-	infoLogger.Printf("🎉 ===== БОТ ЗАПУЩЕН ===== 🎉")
+func Debug(msg string, fields ...interface{}) {
+	if logInstance != nil {
+		logInstance.log(DEBUG, msg, fields...)
+	}
 }
 
-func LogShutdown() {
-	infoLogger.Printf("🛑 ===== БОТ ОСТАНОВЛЕН ===== 🛑")
+func Info(msg string, fields ...interface{}) {
+	if logInstance != nil {
+		logInstance.log(INFO, msg, fields...)
+	}
 }
 
-func LogDatabase(message string) {
-	debugLogger.Printf("🗄️  DB: %s", message)
+func Warn(msg string, fields ...interface{}) {
+	if logInstance != nil {
+		logInstance.log(WARN, msg, fields...)
+	}
 }
 
-func LogReminder(message string) {
-	infoLogger.Printf("🔔 REM: %s", message)
+func Error(msg string, fields ...interface{}) {
+	if logInstance != nil {
+		logInstance.log(ERROR, msg, fields...)
+	}
 }
 
-func LogTransaction(userID int64, amount float64, category string) {
-	infoLogger.Printf("💳 TXN user_%d: %.2f ₽ - %s", userID, amount, category)
+func Fatal(msg string, fields ...interface{}) {
+	if logInstance != nil {
+		logInstance.log(FATAL, msg, fields...)
+		os.Exit(1)
+	}
 }
 
-func LogSaving(userID int64, action string, amount float64, savingName string) {
-	infoLogger.Printf("💰 SAV user_%d: %s %.2f ₽ - %s", userID, action, amount, savingName)
+func Close() {
+	if logInstance != nil && logInstance.file != nil {
+		logInstance.file.Close()
+	}
 }

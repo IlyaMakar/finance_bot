@@ -2,7 +2,6 @@ package service
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/IlyaMakar/finance_bot/internal/repository"
@@ -29,18 +28,7 @@ func (s *FinanceService) RenameCategory(id int, newName string) error {
 }
 
 func (s *FinanceService) GetCategories() ([]repository.Category, error) {
-	cats, err := s.repo.GetCategories(s.userID)
-	if err != nil {
-		return nil, fmt.Errorf("не удалось получить категории: %v", err)
-	}
-
-	if len(cats) == 0 {
-		log.Printf("Для пользователя %d категории не найдены, создаем базовые", s.userID)
-	} else {
-		log.Printf("Найдено %d категорий для пользователя %d", len(cats), s.userID)
-	}
-
-	return cats, nil
+	return s.repo.GetCategories(s.userID)
 }
 
 func (s *FinanceService) CreateCategory(name, typ string, parent *int) (int, error) {

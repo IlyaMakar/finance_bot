@@ -2,10 +2,11 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -19,57 +20,62 @@ import (
 )
 
 func main() {
-	logger.Init()
-	logger.LogStartup()
+	logLevel := getEnv("LOG_LEVEL", "INFO")
+	logToFile := getEnv("LOG_TO_FILE", "false") == "true"
+
+	if err := logger.Init(logLevel, logToFile); err != nil {
+		log.Printf("Failed to initialize logger: %v", err)
+		log.Println("Using basic logging")
+	}
+	defer logger.Close()
 
 	defer func() {
 		if r := recover(); r != nil {
-			logger.LogError("system", fmt.Sprintf("PANIC: %v", r))
+			logger.Error("PANIC recovered", "error", r)
 		}
-		logger.LogShutdown()
 	}()
+
+	logger.Info("Starting Finance Bot")
 
 	err := godotenv.Load()
 	if err != nil {
-		logger.LogError("system", fmt.Sprintf("Error loading .env file: %v", err))
-		log.Println(".env файл не найден или не удалось загрузить")
+		logger.Warn(".env file not found or could not be loaded")
 	}
 
 	token := os.Getenv("TELEGRAM_TOKEN")
 	if token == "" {
-		logger.LogError("system", "TELEGRAM_TOKEN not set")
-		log.Fatalf("TELEGRAM_TOKEN не задан")
+		logger.Fatal("TELEGRAM_TOKEN not set")
 	}
 
 	isTestMode := os.Getenv("TEST_MODE") == "true"
 	dbPath := "finance.db"
 	if isTestMode {
 		dbPath = "finance_test.db"
-		logger.LogCommandByID(0, "Запуск в тестовом режиме с базой finance_test.db")
+		logger.Info("Running in test mode", "db_path", dbPath)
 	}
 
+	logger.Info("Connecting to database", "path", dbPath)
 	db, err := repository.NewSQLiteDB(dbPath)
 	if err != nil {
-		logger.LogError("system", fmt.Sprintf("Failed to connect to DB: %v", err))
-		log.Fatalf("не удалось подключиться к БД: %v", err)
+		logger.Fatal("Failed to connect to database", "error", err)
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
-			logger.LogError("system", fmt.Sprintf("Error closing DB: %v", err))
+			logger.Error("Error closing database", "error", err)
 		}
 	}()
 
+	logger.Info("Initializing database")
 	if err := repository.InitDB(db); err != nil {
-		logger.LogError("system", fmt.Sprintf("Failed to init DB: %v", err))
-		log.Fatalf("не удалось инициализировать БД: %v", err)
+		logger.Fatal("Failed to initialize database", "error", err)
 	}
 
 	repo := repository.NewRepository(db)
 
+	logger.Info("Creating bot instance")
 	botInstance, err := handlers.NewBot(token, repo)
 	if err != nil {
-		logger.LogError("system", fmt.Sprintf("Failed to create bot: %v", err))
-		log.Fatalf("не удалось создать бота: %v", err)
+		logger.Fatal("Failed to create bot", "error", err)
 	}
 
 	botInstance.CheckForUpdates()
@@ -77,33 +83,54 @@ func main() {
 
 	loc, err := time.LoadLocation("Asia/Yekaterinburg")
 	if err != nil {
-		logger.LogError("system", fmt.Sprintf("Не удалось загрузить временную зону Asia/Yekaterinburg: %v", err))
-		log.Fatalf("Ошибка загрузки временной зоны: %v", err)
+		logger.Fatal("Failed to load timezone", "error", err)
 	}
 
-	printSimpleStats(db, loc) // Упрощенная статистика
+	printSimpleStats(db, loc)
 
 	go botInstance.Start()
+	go startAdminAPI(botInstance, repo)
 	go startReminder(botInstance, repo, isTestMode)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-	logger.LogCommandByID(0, "Бот успешно запущен. Ожидание команд...")
-	log.Println("Завершение работы...")
+	logger.Info("Bot successfully started and waiting for commands")
+	logger.Info("Press Ctrl+C to stop")
 
 	<-quit
-	logger.LogCommandByID(0, "Получен сигнал завершения. Остановка бота...")
+	logger.Info("Received shutdown signal, stopping bot...")
 }
 
-// Упрощенная статистика при запуске
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func startAdminAPI(botInstance *handlers.Bot, repo *repository.SQLiteRepository) {
+	statsAPI := handlers.NewStatsAPI(repo)
+
+	http.HandleFunc("/api/stats", statsAPI.GetStats)
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("OK"))
+	})
+
+	port := 8080
+	logger.Info("📊 Starting admin API server", "port", port)
+	if err := http.ListenAndServe(":"+strconv.Itoa(port), nil); err != nil {
+		logger.Error("❌ Failed to start admin API", "error", err)
+	}
+}
+
 func printSimpleStats(db *sql.DB, loc *time.Location) {
 	now := time.Now().In(loc)
 
 	var totalUsers int
 	err := db.QueryRow("SELECT COUNT(*) FROM users").Scan(&totalUsers)
 	if err != nil {
-		logger.LogError("system", fmt.Sprintf("Ошибка подсчета пользователей: %v", err))
+		logger.Error("Error counting users", "error", err)
 		totalUsers = 0
 	}
 
@@ -112,14 +139,14 @@ func printSimpleStats(db *sql.DB, loc *time.Location) {
 		SELECT COUNT(*) FROM user_activity WHERE last_active >= ?
 	`, now.Add(-24*time.Hour).Format(time.RFC3339)).Scan(&activeUsers)
 	if err != nil {
-		logger.LogError("system", fmt.Sprintf("Ошибка подсчета активных пользователей: %v", err))
+		logger.Error("Error counting active users", "error", err)
 		activeUsers = 0
 	}
 
-	logger.LogSystem(fmt.Sprintf("📊 Статистика при запуске - Дата: %s", now.Format("02.01.2006 15:04")))
-	logger.LogSystem(fmt.Sprintf("👥 Всего пользователей: %d", totalUsers))
-	logger.LogSystem(fmt.Sprintf("🎯 Активных за 24ч: %d", activeUsers))
-	logger.LogSystem("========================================")
+	logger.Info("Startup statistics",
+		"date", now.Format("02.01.2006 15:04"),
+		"total_users", totalUsers,
+		"active_24h", activeUsers)
 }
 
 func startReminder(botInstance *handlers.Bot, repo *repository.SQLiteRepository, testMode bool) {
@@ -133,7 +160,7 @@ func startReminder(botInstance *handlers.Bot, repo *repository.SQLiteRepository,
 
 	loc, err := time.LoadLocation("Europe/Moscow")
 	if err != nil {
-		log.Fatalf("Не удалось загрузить временную зону Europe/Moscow: %v", err)
+		logger.Fatal("Failed to load Moscow timezone", "error", err)
 	}
 
 	time.Sleep(10 * time.Second)
@@ -149,17 +176,18 @@ func startReminder(botInstance *handlers.Bot, repo *repository.SQLiteRepository,
 			continue
 		}
 
-		logger.LogReminder("Проверка напоминаний...")
+		logger.Debug("Checking reminders")
 		users, err := repo.GetAllUsers()
 		if err != nil {
-			logger.LogError("system", fmt.Sprintf("Reminder error getting users: %v", err))
+			logger.Error("Reminder error getting users", "error", err)
 			continue
 		}
 
+		remindersSent := 0
 		for _, user := range users {
 			enabled, err := repo.GetUserNotificationsEnabled(user.ID)
 			if err != nil {
-				logger.LogError(user.TelegramID, fmt.Sprintf("Notification check error: %v", err))
+				logger.Error("Notification check error", "user_id", user.TelegramID, "error", err)
 				continue
 			}
 
@@ -169,15 +197,17 @@ func startReminder(botInstance *handlers.Bot, repo *repository.SQLiteRepository,
 
 			hasTransactions, err := repo.HasTransactionsToday(user.ID)
 			if err != nil {
-				logger.LogError(user.TelegramID, fmt.Sprintf("Transaction check error: %v", err))
+				logger.Error("Transaction check error", "user_id", user.TelegramID, "error", err)
 				continue
 			}
 
 			if !hasTransactions {
-				logger.LogReminder(fmt.Sprintf("Отправка напоминания user_%d", user.TelegramID))
+				logger.Info("Sending reminder", "user_id", user.TelegramID)
 				sendReminderMessage(botInstance, user.TelegramID, testMode)
+				remindersSent++
 			}
 		}
+		logger.Info("Reminders completed", "sent", remindersSent, "total_users", len(users))
 	}
 }
 
@@ -186,15 +216,15 @@ func sendTestReminder(botInstance *handlers.Bot, repo *repository.SQLiteReposito
 		return
 	}
 
-	logger.LogReminder("Отправка тестовых напоминаний")
+	logger.Info("Sending test reminders")
 	users, err := repo.GetAllUsers()
 	if err != nil {
-		logger.LogError("system", fmt.Sprintf("Test reminder error getting users: %v", err))
+		logger.Error("Test reminder error getting users", "error", err)
 		return
 	}
 
 	for _, user := range users {
-		logger.LogReminder(fmt.Sprintf("Отправка тестового напоминания user_%d", user.TelegramID))
+		logger.Debug("Sending test reminder", "user_id", user.TelegramID)
 		msg := tgbotapi.NewMessage(
 			user.TelegramID,
 			"🔔 <b>Тестовое напоминание</b>\n\n"+

@@ -6,14 +6,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/IlyaMakar/finance_bot/internal/logger"
 	"github.com/IlyaMakar/finance_bot/internal/service"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 func (b *Bot) handleMessage(m *tgbotapi.Message) {
-	logger.LogCommand(m.From.UserName, fmt.Sprintf("Получено сообщение: %s", m.Text))
-
 	user, err := b.repo.GetOrCreateUser(
 		m.From.ID,
 		m.From.UserName,
@@ -21,7 +18,6 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 		m.From.LastName,
 	)
 	if err != nil {
-		logger.LogError(m.From.UserName, fmt.Sprintf("Ошибка получения пользователя: %v", err))
 		b.sendError(m.Chat.ID, err)
 		return
 	}
@@ -30,7 +26,6 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 
 	switch m.Text {
 	case "/start":
-		logger.LogCommand(m.From.UserName, "Команда /start")
 		b.initBasicCategories(user)
 
 		welcomeMsg := `👋 <b>Привет! Я твой финансовый помощник! 🎯</b>
@@ -54,23 +49,18 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 		b.send(m.Chat.ID, msg)
 
 	case "➕ Добавить операцию":
-		logger.LogCommand(m.From.UserName, "Кнопка: Добавить операцию")
 		b.startAddTransaction(m.Chat.ID)
 
 	case "📊 Статистика":
-		logger.LogCommand(m.From.UserName, "Кнопка: Статистика")
 		b.showReportPeriodMenu(m.Chat.ID)
 
 	case "⚙️ Настройки":
-		logger.LogCommand(m.From.UserName, "Кнопка: Настройки")
 		b.showSettingsMenu(m.Chat.ID)
 
 	case "💵 Накопления":
-		logger.LogCommand(m.From.UserName, "Кнопка: Накопления")
 		b.showSavings(m.Chat.ID, svc)
 
 	default:
-		logger.LogCommand(m.From.UserName, fmt.Sprintf("Текст сообщения: %s", m.Text))
 		b.handleUserInput(m, svc)
 	}
 }
@@ -79,6 +69,11 @@ func (b *Bot) handleUserInput(m *tgbotapi.Message, svc *service.FinanceService) 
 	s, ok := userStates[m.From.ID]
 	if !ok {
 		b.sendMainMenu(m.Chat.ID, "🤔 Выберите действие:")
+		return
+	}
+
+	if s.FeedbackStep != "" {
+		b.handleFeedbackInput(m)
 		return
 	}
 
@@ -152,24 +147,20 @@ func (b *Bot) handleUserInput(m *tgbotapi.Message, svc *service.FinanceService) 
 	case "enter_period_start_day":
 		user, err := b.repo.GetOrCreateUser(m.Chat.ID, m.From.UserName, m.From.FirstName, m.From.LastName)
 		if err != nil {
-			logger.LogError(fmt.Sprintf("user_%d", m.Chat.ID), fmt.Sprintf("Ошибка получения пользователя: %v", err))
 			b.sendError(m.Chat.ID, err)
 			return
 		}
 		day, err := strconv.ParseInt(m.Text, 10, 32)
 		if err != nil || day < 1 || day > 31 {
-			logger.LogError(fmt.Sprintf("user_%d", m.Chat.ID), fmt.Sprintf("Некорректный ввод дня: %s", m.Text))
 			b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "⚠️ Введите число от 1 до 31:"))
 			return
 		}
 		svc := service.NewService(b.repo, user)
 		err = svc.SetPeriodStartDay(int(day))
 		if err != nil {
-			logger.LogError(fmt.Sprintf("user_%d", m.Chat.ID), fmt.Sprintf("Ошибка установки дня периода: %v", err))
 			b.sendError(m.Chat.ID, err)
 			return
 		}
-		logger.LogCommandByID(m.Chat.ID, fmt.Sprintf("Установлен день периода: %d", day))
 		b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, fmt.Sprintf("✅ Начало периода установлено на %d-е число.", day)))
 		delete(userStates, m.From.ID)
 		b.showSettingsMenu(m.Chat.ID)
@@ -212,6 +203,63 @@ func (b *Bot) handleUserInput(m *tgbotapi.Message, svc *service.FinanceService) 
 		b.showSavingActions(m.Chat.ID, savingID, svc)
 	default:
 		b.sendMainMenu(m.Chat.ID, "🤔 Неизвестная команда")
+	}
+}
+
+func (b *Bot) handleFeedbackInput(m *tgbotapi.Message) {
+	state := userStates[m.From.ID]
+	text := strings.TrimSpace(m.Text)
+
+	switch state.FeedbackStep {
+	case "what_likes":
+		state.FeedbackData["what_likes"] = text
+		state.FeedbackStep = "what_missing"
+		userStates[m.From.ID] = state
+
+		msg := tgbotapi.NewMessage(m.Chat.ID, `2. <b>Чего не хватает в боте?</b>
+Какие функции вы хотели бы видеть?`)
+		msg.ParseMode = "HTML"
+		msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🚫 Отмена", CallbackFeedbackCancel),
+			),
+		)
+		b.send(m.Chat.ID, msg)
+
+	case "what_missing":
+		state.FeedbackData["what_missing"] = text
+		state.FeedbackStep = "what_annoying"
+		userStates[m.From.ID] = state
+
+		msg := tgbotapi.NewMessage(m.Chat.ID, `3. <b>Что раздражает или бесит в боте?</b>
+Расскажите о проблемах или неудобствах:`)
+		msg.ParseMode = "HTML"
+		msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🚫 Отмена", CallbackFeedbackCancel),
+			),
+		)
+		b.send(m.Chat.ID, msg)
+
+	case "what_annoying":
+		state.FeedbackData["what_annoying"] = text
+		state.FeedbackStep = "recommend"
+		userStates[m.From.ID] = state
+
+		msg := tgbotapi.NewMessage(m.Chat.ID, `4. <b>Порекомендуете ли вы бота друзьям?</b>
+
+Ваша рекомендация очень важна для нас!`)
+		msg.ParseMode = "HTML"
+		msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("✅ Да", "feedback_recommend_yes"),
+				tgbotapi.NewInlineKeyboardButtonData("❌ Нет", "feedback_recommend_no"),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🚫 Отмена", CallbackFeedbackCancel),
+			),
+		)
+		b.send(m.Chat.ID, msg)
 	}
 }
 
@@ -272,25 +320,6 @@ func (b *Bot) handleEditTransaction(chatID int64, transactionID int, svc *servic
 		),
 	)
 	b.send(chatID, msg)
-}
-func (b *Bot) handleRenameSaving(m *tgbotapi.Message, svc *service.FinanceService) {
-	state := userStates[m.From.ID]
-	newName := strings.TrimSpace(m.Text)
-
-	if newName == "" {
-		b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "⚠️ Название не может быть пустым. Попробуйте снова:"))
-		return
-	}
-
-	err := svc.RenameSaving(state.TempCategoryID, newName)
-	if err != nil {
-		b.sendError(m.Chat.ID, err)
-		return
-	}
-
-	delete(userStates, m.From.ID)
-	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "✅ Копилка переименована!"))
-	b.showSavingsManagement(m.Chat.ID, svc)
 }
 
 func (b *Bot) handleRenameCategory(m *tgbotapi.Message, svc *service.FinanceService) {
@@ -374,9 +403,6 @@ func (b *Bot) handleComment(m *tgbotapi.Message, svc *service.FinanceService) {
 
 	formattedAmount := b.formatCurrency(amount, m.Chat.ID)
 
-	// Логирование транзакции
-	logger.LogTransaction(m.From.ID, amount, categoryName)
-
 	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID,
 		fmt.Sprintf("✅ %s: %s, %s", operationType, categoryName, formattedAmount)))
 
@@ -408,9 +434,6 @@ func (b *Bot) handleSavingAmount(m *tgbotapi.Message, svc *service.FinanceServic
 
 	formattedAmount := b.formatCurrency(amount, m.Chat.ID)
 	formattedNewAmount := b.formatCurrency(newAmount, m.Chat.ID)
-
-	// Логирование операции с копилкой
-	logger.LogSaving(m.From.ID, "Пополнение", amount, saving.Name)
 
 	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID,
 		fmt.Sprintf("✅ Копилка '%s' пополнена на %s!\n💰 Новый баланс: %s", saving.Name, formattedAmount, formattedNewAmount)))
@@ -482,9 +505,6 @@ func (b *Bot) handleCreateSavingGoal(m *tgbotapi.Message) {
 		b.sendError(m.Chat.ID, err)
 		return
 	}
-
-	// Логирование создания копилки
-	logger.LogSaving(m.From.ID, "Создание", 0, s.TempComment)
 
 	b.send(m.Chat.ID, tgbotapi.NewMessage(m.Chat.ID, "🎉 Копилка создана!"))
 

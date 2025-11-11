@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/IlyaMakar/finance_bot/internal/logger"
 	_ "modernc.org/sqlite"
 )
 
@@ -56,6 +57,13 @@ type GlobalCategory struct {
 	ID   int
 	Name string
 	Type string
+}
+
+type Version struct {
+	ID          int
+	Version     string
+	ReleaseDate time.Time
+	Description string
 }
 
 func NewSQLiteDB(path string) (*sql.DB, error) {
@@ -153,11 +161,24 @@ CREATE TABLE IF NOT EXISTS button_clicks (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+-- Добавляем таблицу для фидбэка
+CREATE TABLE IF NOT EXISTS user_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    what_likes TEXT,
+    what_missing TEXT,
+    what_annoying TEXT,
+    recommend TEXT CHECK(recommend IN ('yes', 'no')),
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
 CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id);
 CREATE INDEX IF NOT EXISTS idx_savings_user ON savings(user_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_user ON user_feedback(user_id);
 
 CREATE TABLE IF NOT EXISTS versions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -174,6 +195,13 @@ CREATE TABLE IF NOT EXISTS user_version_read (
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (version_id) REFERENCES versions(id)
 );
+CREATE TABLE IF NOT EXISTS bot_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    level TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_bot_logs_created ON bot_logs(created_at);
 `
 
 	_, err := db.Exec(schema)
@@ -261,7 +289,7 @@ func (r *SQLiteRepository) HasTransactionsToday(userID int) (bool, error) {
 }
 
 func (r *SQLiteRepository) GetAllUsers() ([]User, error) {
-	rows, err := r.db.Query("SELECT id, telegram_id FROM users")
+	rows, err := r.db.Query("SELECT id, telegram_id, username, first_name, last_name, created_at, notifications_enabled, period_start_day FROM users")
 	if err != nil {
 		return nil, err
 	}
@@ -270,9 +298,12 @@ func (r *SQLiteRepository) GetAllUsers() ([]User, error) {
 	var users []User
 	for rows.Next() {
 		var u User
-		if err := rows.Scan(&u.ID, &u.TelegramID); err != nil {
+		var createdAt string
+		err := rows.Scan(&u.ID, &u.TelegramID, &u.Username, &u.FirstName, &u.LastName, &createdAt, &u.NotificationsEnabled, &u.PeriodStartDay)
+		if err != nil {
 			return nil, err
 		}
+		u.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		users = append(users, u)
 	}
 	return users, nil
@@ -290,31 +321,47 @@ func (r *SQLiteRepository) GetOrCreateUser(telegramID int64, username, firstName
 	if err == nil {
 		user.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		r.UpdateUserActivity(user.ID, time.Now())
+		logger.Debug("User found", "user_id", user.ID, "telegram_id", user.TelegramID)
 		return &user, nil
 	}
 
 	if err == sql.ErrNoRows {
+		logger.Info("Creating new user",
+			"telegram_id", telegramID,
+			"username", username,
+			"first_name", firstName)
+
 		res, err := r.db.Exec(
 			"INSERT INTO users (telegram_id, username, first_name, last_name, created_at, notifications_enabled, period_start_day) VALUES (?, ?, ?, ?, ?, TRUE, 1)",
 			telegramID, username, firstName, lastName, time.Now().Format(time.RFC3339),
 		)
 		if err != nil {
+			logger.Error("Failed to create user", "telegram_id", telegramID, "error", err)
 			return nil, fmt.Errorf("create user: %w", err)
 		}
 
 		id, _ := res.LastInsertId()
 		user = User{
-			ID:         int(id),
-			TelegramID: telegramID,
-			Username:   username,
-			FirstName:  firstName,
-			LastName:   lastName,
-			CreatedAt:  time.Now(),
+			ID:                   int(id),
+			TelegramID:           telegramID,
+			Username:             username,
+			FirstName:            firstName,
+			LastName:             lastName,
+			CreatedAt:            time.Now(),
+			NotificationsEnabled: true,
+			PeriodStartDay:       1,
 		}
 		r.UpdateUserActivity(user.ID, time.Now())
+
+		logger.Info("New user created",
+			"user_id", user.ID,
+			"telegram_id", user.TelegramID,
+			"username", user.Username)
+
 		return &user, nil
 	}
 
+	logger.Error("Error getting user", "telegram_id", telegramID, "error", err)
 	return nil, fmt.Errorf("get user: %w", err)
 }
 
@@ -347,21 +394,40 @@ func (r *SQLiteRepository) RecordButtonClick(userID int, buttonName string) erro
 	return err
 }
 
-func (r *SQLiteRepository) GetActiveUsersCount(since time.Time, count *int) error {
-	query := "SELECT COUNT(*) FROM user_activity WHERE last_active >= ?"
-	return r.db.QueryRow(query, since.Format(time.RFC3339)).Scan(count)
-}
+func (r *SQLiteRepository) GetUserActivity(userID int) (time.Time, error) {
+	var activityTime string
+	err := r.db.QueryRow(
+		"SELECT last_active FROM user_activity WHERE user_id = ?",
+		userID,
+	).Scan(&activityTime)
 
-func (r *SQLiteRepository) GetActiveUsersCountForPeriod(start, end time.Time, count *int) error {
-	query := "SELECT COUNT(*) FROM user_activity WHERE last_active >= ? AND last_active < ?"
-	return r.db.QueryRow(query, start.Format(time.RFC3339), end.Format(time.RFC3339)).Scan(count)
-}
-
-func (r *SQLiteRepository) GetButtonClicksCount(since time.Time, counts *map[string]int) error {
-	*counts = make(map[string]int)
-	rows, err := r.db.Query("SELECT button_name, COUNT(*) FROM button_clicks WHERE click_time >= ? GROUP BY button_name", since.Format(time.RFC3339))
 	if err != nil {
-		return err
+		if err == sql.ErrNoRows {
+			return time.Time{}, nil
+		}
+		return time.Time{}, err
+	}
+
+	return time.Parse(time.RFC3339, activityTime)
+}
+
+func (r *SQLiteRepository) GetActiveUsersCount(since time.Time) (int, error) {
+	var count int
+	err := r.db.QueryRow(
+		"SELECT COUNT(*) FROM user_activity WHERE last_active >= ?",
+		since.Format(time.RFC3339),
+	).Scan(&count)
+	return count, err
+}
+
+func (r *SQLiteRepository) GetButtonClicksCount(since time.Time) (map[string]int, error) {
+	counts := make(map[string]int)
+	rows, err := r.db.Query(
+		"SELECT button_name, COUNT(*) FROM button_clicks WHERE click_time >= ? GROUP BY button_name",
+		since.Format(time.RFC3339),
+	)
+	if err != nil {
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -369,18 +435,30 @@ func (r *SQLiteRepository) GetButtonClicksCount(since time.Time, counts *map[str
 		var buttonName string
 		var count int
 		if err := rows.Scan(&buttonName, &count); err != nil {
-			return err
+			return nil, err
 		}
-		(*counts)[buttonName] = count
+		counts[buttonName] = count
 	}
-	return rows.Err()
+	return counts, rows.Err()
 }
 
-func (r *SQLiteRepository) GetButtonClicksCountForPeriod(start, end time.Time, counts *map[string]int) error {
-	*counts = make(map[string]int)
-	rows, err := r.db.Query("SELECT button_name, COUNT(*) FROM button_clicks WHERE click_time >= ? AND click_time < ? GROUP BY button_name", start.Format(time.RFC3339), end.Format(time.RFC3339))
+func (r *SQLiteRepository) GetActiveUsersCountForPeriod(start, end time.Time) (int, error) {
+	var count int
+	err := r.db.QueryRow(
+		"SELECT COUNT(*) FROM user_activity WHERE last_active >= ? AND last_active < ?",
+		start.Format(time.RFC3339), end.Format(time.RFC3339),
+	).Scan(&count)
+	return count, err
+}
+
+func (r *SQLiteRepository) GetButtonClicksCountForPeriod(start, end time.Time) (map[string]int, error) {
+	counts := make(map[string]int)
+	rows, err := r.db.Query(
+		"SELECT button_name, COUNT(*) FROM button_clicks WHERE click_time >= ? AND click_time < ? GROUP BY button_name",
+		start.Format(time.RFC3339), end.Format(time.RFC3339),
+	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -388,11 +466,11 @@ func (r *SQLiteRepository) GetButtonClicksCountForPeriod(start, end time.Time, c
 		var buttonName string
 		var count int
 		if err := rows.Scan(&buttonName, &count); err != nil {
-			return err
+			return nil, err
 		}
-		(*counts)[buttonName] = count
+		counts[buttonName] = count
 	}
-	return rows.Err()
+	return counts, rows.Err()
 }
 
 func (r *SQLiteRepository) GetCategories(userID int) ([]Category, error) {
@@ -541,6 +619,7 @@ func (r *SQLiteRepository) DeleteCategory(userID, id int) error {
 
 func (r *SQLiteRepository) AddTransaction(userID int, t Transaction) (int, error) {
 	if _, err := r.GetCategoryByID(userID, t.CategoryID); err != nil {
+		logger.Error("Invalid category for transaction", "user_id", userID, "category_id", t.CategoryID, "error", err)
 		return 0, err
 	}
 
@@ -549,10 +628,18 @@ func (r *SQLiteRepository) AddTransaction(userID int, t Transaction) (int, error
 		userID, t.Amount, t.CategoryID, t.Date.Format(time.RFC3339), t.PaymentMethod, t.Comment,
 	)
 	if err != nil {
+		logger.Error("Failed to add transaction", "user_id", userID, "error", err)
 		return 0, fmt.Errorf("insert trans: %w", err)
 	}
 	id, _ := res.LastInsertId()
 	r.UpdateUserActivity(userID, time.Now())
+
+	logger.Info("Transaction added",
+		"user_id", userID,
+		"transaction_id", id,
+		"amount", t.Amount,
+		"category_id", t.CategoryID)
+
 	return int(id), nil
 }
 
@@ -752,13 +839,6 @@ func (r *SQLiteRepository) UpdateUserPeriodStartDay(userID int, day int) error {
 	return err
 }
 
-type Version struct {
-	ID          int
-	Version     string
-	ReleaseDate time.Time
-	Description string
-}
-
 func (r *SQLiteRepository) AddVersion(version, description string) error {
 	_, err := r.db.Exec(
 		"INSERT INTO versions (version, release_date, description) VALUES (?, ?, ?)",
@@ -776,6 +856,9 @@ func (r *SQLiteRepository) GetLatestVersion() (*Version, error) {
 	).Scan(&v.ID, &v.Version, &dateStr, &v.Description)
 
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
 		return nil, err
 	}
 
@@ -834,4 +917,104 @@ func (r *SQLiteRepository) UpdateSavingGoal(userID, id int, goal *float64) error
 		goal, id, userID,
 	)
 	return err
+}
+
+func (r *SQLiteRepository) SaveFeedback(userID int, data map[string]string) error {
+	_, err := r.db.Exec(
+		"INSERT INTO user_feedback (user_id, what_likes, what_missing, what_annoying, recommend, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+		userID,
+		data["what_likes"],
+		data["what_missing"],
+		data["what_annoying"],
+		data["recommend"],
+		time.Now().Format(time.RFC3339),
+	)
+	return err
+}
+
+func (r *SQLiteRepository) GetAllFeedback() ([]map[string]interface{}, error) {
+	rows, err := r.db.Query(`
+        SELECT uf.id, u.telegram_id, u.username, uf.what_likes, uf.what_missing, uf.what_annoying, uf.recommend, uf.created_at
+        FROM user_feedback uf
+        JOIN users u ON uf.user_id = u.id
+        ORDER BY uf.created_at DESC
+    `)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var feedbacks []map[string]interface{}
+	for rows.Next() {
+		var (
+			id           int
+			telegramID   int64
+			username     sql.NullString
+			whatLikes    sql.NullString
+			whatMissing  sql.NullString
+			whatAnnoying sql.NullString
+			recommend    sql.NullString
+			createdAt    string
+		)
+
+		err := rows.Scan(&id, &telegramID, &username, &whatLikes, &whatMissing, &whatAnnoying, &recommend, &createdAt)
+		if err != nil {
+			return nil, err
+		}
+
+		feedback := map[string]interface{}{
+			"id":            id,
+			"telegram_id":   telegramID,
+			"username":      getStringFromNull(username),
+			"what_likes":    getStringFromNull(whatLikes),
+			"what_missing":  getStringFromNull(whatMissing),
+			"what_annoying": getStringFromNull(whatAnnoying),
+			"recommend":     getStringFromNull(recommend),
+			"created_at":    createdAt,
+		}
+		feedbacks = append(feedbacks, feedback)
+	}
+
+	return feedbacks, nil
+}
+
+func getStringFromNull(s sql.NullString) string {
+	if s.Valid {
+		return s.String
+	}
+	return ""
+}
+
+func (r *SQLiteRepository) GetFeedbackStats() (map[string]interface{}, error) {
+	stats := make(map[string]interface{})
+
+	var total int
+	err := r.db.QueryRow("SELECT COUNT(*) FROM user_feedback").Scan(&total)
+	if err != nil {
+		return nil, err
+	}
+	stats["total_feedbacks"] = total
+
+	var yesCount, noCount int
+	err = r.db.QueryRow("SELECT COUNT(*) FROM user_feedback WHERE recommend = 'yes'").Scan(&yesCount)
+	if err != nil {
+		return nil, err
+	}
+	err = r.db.QueryRow("SELECT COUNT(*) FROM user_feedback WHERE recommend = 'no'").Scan(&noCount)
+	if err != nil {
+		return nil, err
+	}
+
+	stats["recommend_yes"] = yesCount
+	stats["recommend_no"] = noCount
+
+	if total > 0 {
+		stats["recommend_yes_percent"] = float64(yesCount) / float64(total) * 100
+		stats["recommend_no_percent"] = float64(noCount) / float64(total) * 100
+	} else {
+		stats["recommend_yes_percent"] = 0
+		stats["recommend_no_percent"] = 0
+	}
+
+	return stats, nil
 }

@@ -1,0 +1,15 @@
+FROM golang:1.23-alpine
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY internal/ ./internal/
+COPY cmd/admin/main.go ./cmd/admin/main.go
+
+RUN go build -o admin ./cmd/admin/main.go
+
+EXPOSE 3000
+
+CMD ["./admin"]

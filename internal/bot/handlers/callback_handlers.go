@@ -17,9 +17,6 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	chatID := q.From.ID
 	data := q.Data
 
-	// Логирование нажатия кнопки
-	logger.LogButtonClickByID(chatID, data)
-
 	user, err := b.repo.GetOrCreateUser(
 		q.From.ID,
 		q.From.UserName,
@@ -27,7 +24,7 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 		q.From.LastName,
 	)
 	if err != nil {
-		logger.LogError(q.From.UserName, fmt.Sprintf("Ошибка: %v", err))
+		log.Printf("Ошибка получения пользователя: %v", err)
 		b.sendError(chatID, err)
 		return
 	}
@@ -79,14 +76,38 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	}
 
 	if err := b.repo.UpdateUserActivity(user.ID, time.Now()); err != nil {
-		logger.LogError(q.From.UserName, fmt.Sprintf("Ошибка обновления активности: %v", err))
+		log.Printf("Ошибка обновления активности: %v", err)
 	}
 
 	if err := b.repo.RecordButtonClick(int(chatID), data); err != nil {
-		logger.LogError(q.From.UserName, fmt.Sprintf("Ошибка записи клика: %v", err))
+		log.Printf("Ошибка записи клика: %v", err)
 	}
 
 	svc := service.NewService(b.repo, user)
+
+	if data == CallbackFeedback {
+		b.startFeedback(q.From.ID)
+		return
+	}
+	if data == CallbackFeedbackSubmit {
+		b.handleFeedbackSubmit(q.From.ID)
+		return
+	}
+	if data == CallbackFeedbackCancel {
+		b.deleteMessage(q.From.ID, q.Message.MessageID)
+		b.sendMainMenu(q.From.ID, "🚫 Отзыв отменен. Что дальше?")
+		return
+	}
+	if strings.HasPrefix(data, "feedback_recommend_") {
+		recommend := data[len("feedback_recommend_"):]
+		state, exists := userStates[q.From.ID]
+		if exists && state.FeedbackData != nil {
+			state.FeedbackData["recommend"] = recommend
+			userStates[q.From.ID] = state
+			b.handleFeedbackSubmit(q.From.ID)
+		}
+		return
+	}
 
 	if data == CallbackManageSavings {
 		b.showSavingsManagement(q.From.ID, svc)
@@ -171,6 +192,7 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 
 		b.send(chatID, tgbotapi.NewMessage(chatID, fmt.Sprintf("💵 Вы выбрали копилку: %s\nВведите сумму для пополнения:", saving.Name)))
 		return
+
 	}
 
 	if strings.HasPrefix(data, "cat_") {
@@ -250,7 +272,7 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	if strings.HasPrefix(data, "saving_delete_") {
 		savingID, _ := strconv.Atoi(data[len("saving_delete_"):])
 		b.deleteMessage(chatID, q.Message.MessageID)
-		b.handleDeleteSaving(chatID, savingID, 0, svc) // 0 потому что сообщение уже удалено
+		b.handleDeleteSaving(chatID, savingID, 0, svc)
 		return
 	}
 
@@ -278,6 +300,8 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	case "show_stats":
 		b.deleteMessage(chatID, q.Message.MessageID)
 		b.showReportPeriodMenu(chatID)
+		logger.Info("User viewing stats", "user_id", user.TelegramID)
+
 	case "show_savings":
 		b.deleteMessage(chatID, q.Message.MessageID)
 		b.showSavings(chatID, svc)
@@ -287,6 +311,7 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	case "start_transaction":
 		b.deleteMessage(chatID, q.Message.MessageID)
 		b.startAddTransaction(chatID)
+		logger.Info("User starting transaction", "user_id", user.TelegramID)
 	case "skip_comment":
 		editMsg := tgbotapi.NewEditMessageReplyMarkup(chatID, q.Message.MessageID, tgbotapi.InlineKeyboardMarkup{})
 		b.bot.Send(editMsg)
@@ -340,7 +365,7 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	case "clear_data":
 		err := svc.ClearUserData()
 		if err != nil {
-			logger.LogError(fmt.Sprintf("user_%d", chatID), fmt.Sprintf("Ошибка очистки данных: %v", err))
+			log.Printf("Ошибка очистки данных: %v", err)
 			b.sendError(chatID, err)
 			return
 		}
@@ -397,6 +422,63 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	default:
 		b.bot.Send(tgbotapi.NewCallback(q.ID, ""))
 	}
+}
+
+func (b *Bot) startFeedback(chatID int64) {
+	state := userStates[chatID]
+	state.FeedbackStep = "what_likes"
+	state.FeedbackData = make(map[string]string)
+	userStates[chatID] = state
+
+	msg := tgbotapi.NewMessage(chatID, `📝 <b>Обратная связь</b>
+
+Помогите нам стать лучше! Ответьте на несколько вопросов:
+
+1. <b>Что вам нравится в боте?</b>
+Расскажите, какие функции самые полезные?`)
+
+	msg.ParseMode = "HTML"
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🚫 Отмена", CallbackFeedbackCancel),
+		),
+	)
+	b.send(chatID, msg)
+}
+
+func (b *Bot) handleFeedbackSubmit(chatID int64) {
+	state, exists := userStates[chatID]
+	if !exists || state.FeedbackData == nil {
+		b.sendError(chatID, fmt.Errorf("данные фидбэка не найдены"))
+		return
+	}
+
+	err := b.saveFeedbackToDB(chatID, state.FeedbackData)
+	if err != nil {
+		b.sendError(chatID, err)
+		return
+	}
+
+	delete(userStates, chatID)
+
+	b.send(chatID, tgbotapi.NewMessage(chatID,
+		"✅ <b>Спасибо за ваш отзыв!</b>\n\n"+
+			"Ваше мнение очень важно для нас и поможет сделать бота лучше! 💙"))
+	b.sendMainMenu(chatID, "🎉 Что дальше?")
+}
+
+func (b *Bot) saveFeedbackToDB(chatID int64, data map[string]string) error {
+	user, err := b.repo.GetOrCreateUser(chatID, "", "", "")
+	if err != nil {
+		return err
+	}
+
+	err = b.repo.SaveFeedback(user.ID, data)
+	if err != nil {
+		return fmt.Errorf("ошибка сохранения фидбэка: %v", err)
+	}
+
+	return nil
 }
 
 func (b *Bot) handleTypeSelect(chatID int64, msgID int, data string, svc *service.FinanceService) {

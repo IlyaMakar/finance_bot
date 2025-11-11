@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/IlyaMakar/finance_bot/internal/logger"
 	"github.com/IlyaMakar/finance_bot/internal/repository"
 	"github.com/IlyaMakar/finance_bot/internal/service"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -74,7 +73,7 @@ func (b *Bot) showSavingsManagement(chatID int64, svc *service.FinanceService) {
 	}
 
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "show_savings"), // Возврат к копилкам
+		tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "show_savings"),
 	))
 
 	msg := tgbotapi.NewMessage(chatID, "✏️ <b>Редактирование копилок</b>\n\nВыберите копилку:")
@@ -261,8 +260,10 @@ func (b *Bot) showSettingsMenu(chatID int64) {
 	keyboard := [][]tgbotapi.InlineKeyboardButton{
 		{tgbotapi.NewInlineKeyboardButtonData("🔔 Уведомления", "notification_settings")},
 		{tgbotapi.NewInlineKeyboardButtonData("📝 Категории", "manage_categories")},
-		{tgbotapi.NewInlineKeyboardButtonData("📅 Период отчётов", CallbackSetPeriodStart)}, // Изменено с "period_settings" на CallbackSetPeriodStart
+		{tgbotapi.NewInlineKeyboardButtonData("📅 Период отчётов", CallbackSetPeriodStart)},
 		{tgbotapi.NewInlineKeyboardButtonData("💱 Валюта", CallbackCurrencySettings)},
+
+		{tgbotapi.NewInlineKeyboardButtonData("📝 Обратная связь", CallbackFeedback)},
 		{tgbotapi.NewInlineKeyboardButtonData("🆘 Поддержка", "support")},
 		{tgbotapi.NewInlineKeyboardButtonData("🧹 Очистить все данные", "confirm_clear_data")},
 		{tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "main_menu")},
@@ -641,7 +642,7 @@ func (b *Bot) showSavings(chatID int64, svc *service.FinanceService) {
 			tgbotapi.NewInlineKeyboardButtonData("✏️ Редактировать", "manage_savings"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "main_menu"), // Кнопка назад
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Назад", "main_menu"),
 		),
 	)
 	b.send(chatID, msg)
@@ -703,7 +704,7 @@ func (b *Bot) showYearlyReport(chatID int64, svc *service.FinanceService) {
 func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, start, end time.Time, periodName string) {
 	trans, err := svc.GetTransactionsForPeriod(start, end)
 	if err != nil {
-		logger.LogError(chatID, fmt.Sprintf("Ошибка получения транзакций для отчета: %v", err))
+		log.Printf("Ошибка получения транзакций для отчета: %v", err)
 		b.sendError(chatID, err)
 		return
 	}
@@ -770,7 +771,7 @@ func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, st
 
 	finalMsg := msgText.String()
 	if len(finalMsg) > 4096 {
-		logger.LogError(chatID, "Длина сообщения статистики превышает лимит Telegram (4096 символов)")
+		log.Printf("Длина сообщения статистики превышает лимит Telegram (4096 символов)")
 		b.sendError(chatID, fmt.Errorf("отчет слишком длинный, попробуйте выбрать меньший период"))
 		return
 	}
@@ -787,12 +788,10 @@ func (b *Bot) generatePeriodReport(chatID int64, svc *service.FinanceService, st
 	)
 
 	if _, err := b.bot.Send(msg); err != nil {
-		logger.LogError(chatID, fmt.Sprintf("Ошибка отправки сообщения статистики: %v", err))
+		log.Printf("Ошибка отправки сообщения статистики: %v", err)
 		b.sendError(chatID, fmt.Errorf("не удалось отправить отчет: %v", err))
 		return
 	}
-
-	logger.LogButtonClickByID(chatID, fmt.Sprintf("Статистика за %s", periodName))
 }
 
 func sortCategoriesByAmount(details map[string]float64) []string {
