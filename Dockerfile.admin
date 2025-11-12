@@ -5,11 +5,12 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY internal/ ./internal/
-COPY cmd/admin/main.go ./cmd/admin/main.go
+COPY . .
 
-RUN go build -o admin ./cmd/admin/main.go
+RUN mkdir -p logs fonts static
+
+RUN go build -o finance_admin ./cmd/admin/main.go
 
 EXPOSE 3000
 
-CMD ["./admin"]
+CMD ["./finance_admin"]

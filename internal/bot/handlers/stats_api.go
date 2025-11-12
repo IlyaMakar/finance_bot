@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/IlyaMakar/finance_bot/internal/logger"
 	"github.com/IlyaMakar/finance_bot/internal/repository"
 )
 
@@ -157,6 +158,13 @@ func translateButtonName(buttonName string) string {
 func (s *StatsAPI) GetStats(w http.ResponseWriter, r *http.Request) {
 	stats := StatsResponse{}
 
+	defer func() {
+		if err := recover(); err != nil {
+			logger.Error("Panic in GetStats", "error", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
+	}()
+
 	users, err := s.repo.GetAllUsers()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error getting users: %v", err), http.StatusInternalServerError)
@@ -239,16 +247,25 @@ func (s *StatsAPI) getAllUsers(users []repository.User) []UserStats {
 func (s *StatsAPI) getAllFeedbacks(feedbacks []map[string]interface{}) []Feedback {
 	var allFeedbacks []Feedback
 	for _, fb := range feedbacks {
-		createdAt, _ := time.Parse(time.RFC3339, fb["created_at"].(string))
+		id, _ := fb["id"].(int)
+		telegramID, _ := fb["telegram_id"].(int64)
+		username, _ := fb["username"].(string)
+		whatLikes, _ := fb["what_likes"].(string)
+		whatMissing, _ := fb["what_missing"].(string)
+		whatAnnoying, _ := fb["what_annoying"].(string)
+		recommend, _ := fb["recommend"].(string)
+
+		createdAtStr, _ := fb["created_at"].(string)
+		createdAt, _ := time.Parse(time.RFC3339, createdAtStr)
 
 		allFeedbacks = append(allFeedbacks, Feedback{
-			ID:           fb["id"].(int),
-			TelegramID:   fb["telegram_id"].(int64),
-			Username:     fb["username"].(string),
-			WhatLikes:    fb["what_likes"].(string),
-			WhatMissing:  fb["what_missing"].(string),
-			WhatAnnoying: fb["what_annoying"].(string),
-			Recommend:    fb["recommend"].(string),
+			ID:           id,
+			TelegramID:   telegramID,
+			Username:     username,
+			WhatLikes:    whatLikes,
+			WhatMissing:  whatMissing,
+			WhatAnnoying: whatAnnoying,
+			Recommend:    recommend,
 			CreatedAt:    createdAt,
 		})
 	}
