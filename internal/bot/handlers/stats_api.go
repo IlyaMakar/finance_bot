@@ -156,7 +156,12 @@ func translateButtonName(buttonName string) string {
 }
 
 func (s *StatsAPI) GetStats(w http.ResponseWriter, r *http.Request) {
-	stats := StatsResponse{}
+	stats := StatsResponse{
+		ButtonClicks:  make(map[string]int),
+		AllUsers:      []UserStats{},
+		FeedbackStats: FeedbackStats{},
+		AllFeedbacks:  []Feedback{},
+	}
 
 	defer func() {
 		if err := recover(); err != nil {
@@ -203,12 +208,23 @@ func (s *StatsAPI) GetStats(w http.ResponseWriter, r *http.Request) {
 	stats.AllUsers = s.getAllUsers(users)
 
 	feedbackStats, err := s.repo.GetFeedbackStats()
-	if err == nil {
-		stats.FeedbackStats.Total = feedbackStats["total_feedbacks"].(int)
-		stats.FeedbackStats.RecommendYes = feedbackStats["recommend_yes"].(int)
-		stats.FeedbackStats.RecommendNo = feedbackStats["recommend_no"].(int)
-		stats.FeedbackStats.YesPercent = feedbackStats["recommend_yes_percent"].(float64)
-		stats.FeedbackStats.NoPercent = feedbackStats["recommend_no_percent"].(float64)
+	if err == nil && feedbackStats != nil {
+		// Безопасное извлечение данных с проверкой типов
+		if total, ok := feedbackStats["total_feedbacks"].(int); ok {
+			stats.FeedbackStats.Total = total
+		}
+		if yes, ok := feedbackStats["recommend_yes"].(int); ok {
+			stats.FeedbackStats.RecommendYes = yes
+		}
+		if no, ok := feedbackStats["recommend_no"].(int); ok {
+			stats.FeedbackStats.RecommendNo = no
+		}
+		if yesPercent, ok := feedbackStats["recommend_yes_percent"].(float64); ok {
+			stats.FeedbackStats.YesPercent = yesPercent
+		}
+		if noPercent, ok := feedbackStats["recommend_no_percent"].(float64); ok {
+			stats.FeedbackStats.NoPercent = noPercent
+		}
 	}
 
 	feedbacks, err := s.repo.GetAllFeedback()

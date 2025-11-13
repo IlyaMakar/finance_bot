@@ -1012,8 +1012,8 @@ func (r *SQLiteRepository) GetFeedbackStats() (map[string]interface{}, error) {
 		stats["recommend_yes_percent"] = float64(yesCount) / float64(total) * 100
 		stats["recommend_no_percent"] = float64(noCount) / float64(total) * 100
 	} else {
-		stats["recommend_yes_percent"] = 0
-		stats["recommend_no_percent"] = 0
+		stats["recommend_yes_percent"] = 0.0
+		stats["recommend_no_percent"] = 0.0
 	}
 
 	return stats, nil

@@ -59,6 +59,8 @@ func (b *Bot) handleMessage(m *tgbotapi.Message) {
 
 	case "💵 Накопления":
 		b.showSavings(m.Chat.ID, svc)
+	case "/feedback":
+		b.startFeedback(m.Chat.ID)
 
 	default:
 		b.handleUserInput(m, svc)
